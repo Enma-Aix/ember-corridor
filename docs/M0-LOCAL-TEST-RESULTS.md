@@ -15,6 +15,8 @@ Environment: Linux x86_64, headless, Compatibility renderer
 
 The local environment intentionally did not download the 1.28 GB full export-template bundle. GitHub Actions performs the official template download, Windows Debug export, executable size check, and artifact upload.
 
+The complete local suite was rerun after CI hardening and remained green.
+
 Commands:
 
     python3 tools/validate_project.py
@@ -22,4 +24,3 @@ Commands:
     godot --headless --path . --script res://scripts/tools/validate_data.gd
     godot --headless --path . --script res://tests/test_runner.gd
     godot --headless --path . --quit-after 3
-
