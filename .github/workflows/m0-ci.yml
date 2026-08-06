@@ -67,6 +67,13 @@ jobs:
           cp licenses/GODOT-ENGINE-LICENSE.md build/windows/GODOT-ENGINE-LICENSE.md
           cp docs/ASSET-LICENSE-REGISTER.csv build/windows/ASSET-LICENSE-REGISTER.csv
 
+      - name: Smoke-test packaged resources
+        run: |
+          godot --headless --path . --export-pack "Windows Desktop" "$RUNNER_TEMP/ember-corridor-m0.pck"
+          godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 \
+            | tee build/test-results/packaged-smoke.txt
+          grep -Fq "[DataRegistry] Loaded 1 definition(s)" build/test-results/packaged-smoke.txt
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4

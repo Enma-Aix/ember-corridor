@@ -1,7 +1,8 @@
 .godot/
 .import/
 *.import
-build/
+build/*
+!build/.gdignore
 export/
 *.tmp
 *.log

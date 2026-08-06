@@ -95,14 +95,27 @@ func _collect_definitions(
 			var entry_path := directory_path.path_join(entry_name)
 			if directory.current_is_dir():
 				_collect_definitions(entry_path, output, errors)
-			elif entry_name.get_extension().to_lower() == "tres":
-				var resource := ResourceLoader.load(entry_path)
+			else:
+				var definition_path := _definition_path_from_entry(entry_path)
+				if definition_path.is_empty():
+					entry_name = directory.get_next()
+					continue
+				var resource := ResourceLoader.load(definition_path)
 				if resource == null:
-					errors.append("failed to load Resource: %s" % entry_path)
+					errors.append("failed to load Resource: %s" % definition_path)
 				elif resource is BaseDefinition:
 					output.append(resource as BaseDefinition)
 				else:
-					errors.append("Resource does not extend BaseDefinition: %s" % entry_path)
+					errors.append(
+						"Resource does not extend BaseDefinition: %s" % definition_path
+					)
 		entry_name = directory.get_next()
 	directory.list_dir_end()
 
+
+func _definition_path_from_entry(entry_path: String) -> String:
+	if entry_path.ends_with(".tres.remap"):
+		return entry_path.trim_suffix(".remap")
+	if entry_path.get_extension().to_lower() == "tres":
+		return entry_path
+	return ""

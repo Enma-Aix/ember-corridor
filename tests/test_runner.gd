@@ -19,6 +19,7 @@ func _run() -> void:
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
 	_record_case("invalid definition ID is rejected", _test_invalid_definition())
 	_record_case("project placeholder Resource loads", _test_project_resource())
+	_record_case("export remap paths resolve to source Resources", _test_export_remap_path())
 	_record_case("release build guards the debug panel", _test_release_debug_guard())
 
 	var failure_count := 0
@@ -171,6 +172,25 @@ func _test_project_resource() -> PackedStringArray:
 	return errors
 
 
+func _test_export_remap_path() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var registry: DataRegistryService = DataRegistryScript.new()
+	var remapped_path := registry._definition_path_from_entry(
+		"res://data/characters/dev_character.tres.remap"
+	)
+	if remapped_path != "res://data/characters/dev_character.tres":
+		errors.append("exported .tres.remap path was not canonicalized")
+	var source_path := registry._definition_path_from_entry(
+		"res://data/characters/dev_character.tres"
+	)
+	if source_path != "res://data/characters/dev_character.tres":
+		errors.append("source .tres path changed during canonicalization")
+	if not registry._definition_path_from_entry("res://data/readme.txt").is_empty():
+		errors.append("non-Resource file was accepted as a definition")
+	registry.free()
+	return errors
+
+
 func _test_release_debug_guard() -> PackedStringArray:
 	var errors := PackedStringArray()
 	var source_file := FileAccess.open("res://scenes/boot/boot.gd", FileAccess.READ)
@@ -253,4 +273,3 @@ func _xml_escape(value: String) -> String:
 		.replace('"', "&quot;")
 		.replace("'", "&apos;")
 	)
-

@@ -45,9 +45,10 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
     godot --headless --path . --import --quit
     godot --headless --path . --script res://scripts/tools/validate_data.gd
     godot --headless --path . --script res://tests/test_runner.gd
+    mkdir -p build/windows
     godot --headless --path . --export-debug "Windows Desktop" build/windows/EmberCorridor.exe
 
-测试失败时返回非零退出码，JUnit XML 和 JSON 报告写入 build/test-results。
+测试失败时返回非零退出码，JUnit XML 和 JSON 报告写入 build/test-results。CI 还会把同一导出预设生成为 PCK 并实际启动，验证打包后的动态 Resource 扫描。
 
 ## M0 完成范围
 
@@ -65,4 +66,3 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 ## 版权边界
 
 本项目只借鉴横版卷轴动作 RPG 的类型经验，不复制 DNF 或其他已发行游戏的素材、名称、职业、技能、地图、音乐或 UI。仓库公开不等于项目代码和原创内容已授予复用许可；项目自身许可证尚待仓库所有者另行决定。
-

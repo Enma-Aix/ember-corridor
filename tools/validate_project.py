@@ -72,6 +72,8 @@ REQUIRED_FILES = (
     "tests/test_runner.gd",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
+    "build/.gdignore",
+    "docs/.gdignore",
 )
 
 EXPECTED_ASSET_HEADERS = (
@@ -93,6 +95,7 @@ def main() -> int:
     validate_required_files(errors)
     validate_project_settings(errors)
     validate_workflow(errors)
+    validate_export_boundary(errors)
     validate_asset_registry(errors)
     validate_offline_boundary(errors)
 
@@ -170,10 +173,38 @@ def validate_workflow(errors: list[str]) -> None:
         "res://scripts/tools/validate_data.gd",
         "res://tests/test_runner.gd",
         '--export-debug "Windows Desktop"',
+        "mkdir -p build/windows",
+        "cp licenses/GODOT-ENGINE-LICENSE.md",
+        "cp docs/ASSET-LICENSE-REGISTER.csv",
+        '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
+        'grep -Fq "[DataRegistry] Loaded 1 definition(s)"',
         "actions/upload-artifact@v4",
     ):
         if marker not in text:
             errors.append(f"CI workflow missing step marker: {marker}")
+
+
+def validate_export_boundary(errors: list[str]) -> None:
+    preset_path = ROOT / "export_presets.cfg"
+    if not preset_path.is_file():
+        return
+    text = preset_path.read_text(encoding="utf-8")
+    match = re.search(r'(?m)^exclude_filter="([^"]*)"$', text)
+    if not match:
+        errors.append("Windows export preset must define an exclude_filter")
+        return
+    filters = {value.strip() for value in match.group(1).split(",")}
+    required_filters = {
+        "build/*",
+        "docs/*",
+        "licenses/*",
+        "scripts/tools/*",
+        "tests/*",
+        "tools/*",
+    }
+    missing = sorted(required_filters.difference(filters))
+    if missing:
+        errors.append(f"Windows export boundary missing filters: {', '.join(missing)}")
 
 
 def validate_asset_registry(errors: list[str]) -> None:
@@ -210,4 +241,3 @@ def validate_offline_boundary(errors: list[str]) -> None:
 
 if __name__ == "__main__":
     sys.exit(main())
-

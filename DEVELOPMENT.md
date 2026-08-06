@@ -15,7 +15,7 @@
 4. 接入 XInput 手柄，移动摇杆并按按钮，确认 Device 切换为 XInput gamepad。
 5. 切回键盘，确认 Device 切换回来。
 6. 运行 headless 数据校验与测试命令，确认退出码为 0。
-7. 运行 Windows Desktop Debug 导出，确认生成 EXE 与 PCK 或内嵌 PCK。
+7. 创建 build/windows 目录，运行 Windows Desktop Debug 导出，确认生成 EXE 与 PCK 或内嵌 PCK。
 8. 检查 GitHub Actions 的 Windows Debug artifact。
 
 ## 失败处理
@@ -31,4 +31,3 @@
 - 存档实现、联网、账号、PVP、排行榜或云服务。
 - 广告、抽卡、付费宝箱、每日任务、体力和高级货币。
 - 第三方 Godot 插件。
-
