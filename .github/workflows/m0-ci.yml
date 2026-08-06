@@ -1,0 +1,83 @@
+name: M0 Foundation CI
+
+on:
+  push:
+    branches:
+      - codex/m0-foundation
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-test-export:
+    name: Validate, test, and export Windows Debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run repository static validation
+        run: python3 tools/validate_project.py
+
+      - name: Download Godot 4.7.1
+        run: |
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/?flavor=stable&platform=linux.64&slug=linux.x86_64.zip&version=4.7.1" \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          install -m 0755 /tmp/godot/Godot_v4.7.1-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version | tee build-godot-version.txt
+          grep -q "^4.7.1.stable" build-godot-version.txt
+
+      - name: Import project headlessly
+        run: godot --headless --path . --import --quit
+
+      - name: Validate Resource data
+        run: godot --headless --path . --script res://scripts/tools/validate_data.gd
+
+      - name: Run headless tests
+        run: godot --headless --path . --script res://tests/test_runner.gd
+
+      - name: Smoke-test the boot scene
+        run: godot --headless --path . --quit-after 3
+
+      - name: Install official export templates
+        run: |
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/?flavor=stable&platform=templates&slug=export_templates.tpz&version=4.7.1" \
+            --output /tmp/export_templates.tpz
+          mkdir -p /tmp/export_templates
+          unzip -q /tmp/export_templates.tpz -d /tmp/export_templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.1.stable"
+          cp -R /tmp/export_templates/templates/. "$HOME/.local/share/godot/export_templates/4.7.1.stable/"
+
+      - name: Export Windows Debug build
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-debug "Windows Desktop" build/windows/EmberCorridor.exe
+          test -s build/windows/EmberCorridor.exe
+          cp licenses/GODOT-ENGINE-LICENSE.md build/windows/GODOT-ENGINE-LICENSE.md
+          cp docs/ASSET-LICENSE-REGISTER.csv build/windows/ASSET-LICENSE-REGISTER.csv
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m0-test-reports
+          path: build/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Windows Debug build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ember-corridor-windows-debug
+          path: build/windows/
+          if-no-files-found: error
+          retention-days: 14

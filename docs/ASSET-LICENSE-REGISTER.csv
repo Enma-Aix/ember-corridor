@@ -1,0 +1,4 @@
+asset_id,asset_name,category,status,source_url,author,license,attribution_required,project_path,notes
+engine-godot-4-7-1,Godot Engine 4.7.1,engine,approved,https://godotengine.org/license/,Godot Engine contributors,MIT,yes,licenses/GODOT-ENGINE-LICENSE.md,Official engine and export templates
+placeholder-dev-character,Development character definition,data,placeholder,created-in-project,Ember Corridor project,project-internal,no,data/characters/dev_character.tres,Code-only M0 validation resource; no external art
+

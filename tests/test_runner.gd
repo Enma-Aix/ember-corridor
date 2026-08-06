@@ -1,0 +1,256 @@
+extends SceneTree
+
+const BaseDefinitionScript := preload("res://scripts/data/base_definition.gd")
+const DataRegistryScript := preload("res://scripts/core/data_registry.gd")
+const SettingsServiceScript := preload("res://scripts/core/settings_service.gd")
+
+var _case_results: Array[Dictionary] = []
+
+
+func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	_record_case("version is pinned to Godot 4.7.1", _test_version_pin())
+	_record_case("required input actions have keyboard and gamepad events", _test_input_actions())
+	_record_case("collision layers match architecture", _test_collision_layers())
+	_record_case("valid Resource is indexed and returned", _test_valid_definition())
+	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
+	_record_case("invalid definition ID is rejected", _test_invalid_definition())
+	_record_case("project placeholder Resource loads", _test_project_resource())
+	_record_case("release build guards the debug panel", _test_release_debug_guard())
+
+	var failure_count := 0
+	for result: Dictionary in _case_results:
+		var errors: PackedStringArray = result["errors"]
+		if errors.is_empty():
+			print("PASS: %s" % result["name"])
+		else:
+			failure_count += 1
+			print("FAIL: %s" % result["name"])
+			for message: String in errors:
+				print("  - %s" % message)
+	_write_reports(failure_count)
+	print(
+		"M0 TEST SUMMARY: %d passed, %d failed"
+		% [_case_results.size() - failure_count, failure_count]
+	)
+	quit(0 if failure_count == 0 else 1)
+
+
+func _record_case(case_name: String, errors: PackedStringArray) -> void:
+	_case_results.append({"name": case_name, "errors": errors})
+
+
+func _test_version_pin() -> PackedStringArray:
+	var errors := PackedStringArray()
+	if VersionInfo.REQUIRED_GODOT_VERSION != "4.7.1":
+		errors.append("VersionInfo does not pin 4.7.1")
+	if not VersionInfo.is_expected_engine():
+		errors.append(
+			"running engine is %s, expected 4.7.1"
+			% Engine.get_version_info().get("string", "unknown")
+		)
+	return errors
+
+
+func _test_input_actions() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var settings := SettingsServiceScript.new()
+	settings.ensure_default_input_map()
+	for action: StringName in SettingsServiceScript.REQUIRED_ACTIONS:
+		if not InputMap.has_action(action):
+			errors.append("missing Input action: %s" % String(action))
+			continue
+		var has_keyboard := false
+		var has_gamepad := false
+		for event: InputEvent in InputMap.action_get_events(action):
+			if event is InputEventKey:
+				has_keyboard = true
+			elif event is InputEventJoypadButton or event is InputEventJoypadMotion:
+				has_gamepad = true
+		if not has_keyboard:
+			errors.append("%s has no keyboard binding" % String(action))
+		if not has_gamepad:
+			errors.append("%s has no gamepad binding" % String(action))
+	settings.free()
+	return errors
+
+
+func _test_collision_layers() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var expected := [
+		"WorldStatic",
+		"PlayerBody",
+		"EnemyBody",
+		"PlayerHitbox",
+		"EnemyHitbox",
+		"PlayerHurtbox",
+		"EnemyHurtbox",
+		"Interactable",
+		"Hazard",
+		"Sensor",
+	]
+	for index: int in range(expected.size()):
+		var setting_name := "layer_names/2d_physics/layer_%d" % (index + 1)
+		var actual := String(ProjectSettings.get_setting(setting_name, ""))
+		if actual != expected[index]:
+			errors.append(
+				"layer %d is '%s', expected '%s'" % [index + 1, actual, expected[index]]
+			)
+	return errors
+
+
+func _test_valid_definition() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var definition: BaseDefinition = BaseDefinitionScript.new()
+	definition.definition_id = &"test.valid"
+	definition.display_name_key = &"test.valid.name"
+	var definitions: Array[BaseDefinition] = []
+	definitions.append(definition)
+	var registry: DataRegistryService = DataRegistryScript.new()
+	var validation_errors := registry.index_definitions(definitions)
+	if not validation_errors.is_empty():
+		errors.append_array(validation_errors)
+	if registry.definition_count() != 1:
+		errors.append("registry did not index exactly one definition")
+	if registry.get_definition(&"test.valid") != definition:
+		errors.append("registry lookup did not return the indexed Resource")
+	registry.free()
+	return errors
+
+
+func _test_duplicate_definition() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var first: BaseDefinition = BaseDefinitionScript.new()
+	first.definition_id = &"test.duplicate"
+	first.display_name_key = &"test.first.name"
+	var second: BaseDefinition = BaseDefinitionScript.new()
+	second.definition_id = &"test.duplicate"
+	second.display_name_key = &"test.second.name"
+	var definitions: Array[BaseDefinition] = []
+	definitions.append(first)
+	definitions.append(second)
+	var registry: DataRegistryService = DataRegistryScript.new()
+	var validation_errors := registry.index_definitions(definitions)
+	var duplicate_found := false
+	for message: String in validation_errors:
+		if message.contains("duplicate definition_id"):
+			duplicate_found = true
+	if not duplicate_found:
+		errors.append("duplicate definition_id was not reported")
+	if registry.definition_count() != 0:
+		errors.append("registry retained definitions after duplicate validation failure")
+	registry.free()
+	return errors
+
+
+func _test_invalid_definition() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var definition: BaseDefinition = BaseDefinitionScript.new()
+	definition.definition_id = &"Invalid ID"
+	definition.display_name_key = &"test.invalid.name"
+	var validation_errors := definition.validation_errors()
+	if validation_errors.is_empty():
+		errors.append("invalid definition_id passed validation")
+	return errors
+
+
+func _test_project_resource() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resource := ResourceLoader.load("res://data/characters/dev_character.tres")
+	if resource == null:
+		errors.append("dev_character.tres could not be loaded")
+	elif not resource is CharacterDefinition:
+		errors.append("dev_character.tres is not a CharacterDefinition")
+	else:
+		var definition := resource as CharacterDefinition
+		if definition.definition_id != &"character.dev_placeholder":
+			errors.append("dev_character.tres has an unexpected definition_id")
+	return errors
+
+
+func _test_release_debug_guard() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source_file := FileAccess.open("res://scenes/boot/boot.gd", FileAccess.READ)
+	if source_file == null:
+		errors.append("boot.gd could not be read")
+		return errors
+	var source := source_file.get_as_text()
+	if not source.contains("OS.is_debug_build()"):
+		errors.append("boot debug panel is not guarded by OS.is_debug_build()")
+	return errors
+
+
+func _write_reports(failure_count: int) -> void:
+	var output_directory := ProjectSettings.globalize_path("res://build/test-results")
+	DirAccess.make_dir_recursive_absolute(output_directory)
+	_write_junit_report(failure_count)
+	_write_json_report(failure_count)
+
+
+func _write_junit_report(failure_count: int) -> void:
+	var lines := PackedStringArray()
+	lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+	lines.append(
+		'<testsuite name="m0-foundation" tests="%d" failures="%d">'
+		% [_case_results.size(), failure_count]
+	)
+	for result: Dictionary in _case_results:
+		var case_name := _xml_escape(String(result["name"]))
+		var errors: PackedStringArray = result["errors"]
+		if errors.is_empty():
+			lines.append('  <testcase name="%s"/>' % case_name)
+		else:
+			var details := _xml_escape("\n".join(errors))
+			lines.append('  <testcase name="%s">' % case_name)
+			lines.append('    <failure message="M0 assertion failed">%s</failure>' % details)
+			lines.append("  </testcase>")
+	lines.append("</testsuite>")
+	var report := FileAccess.open(
+		"res://build/test-results/m0-results.xml",
+		FileAccess.WRITE
+	)
+	if report == null:
+		push_warning("Could not write JUnit report")
+		return
+	report.store_string("\n".join(lines) + "\n")
+
+
+func _write_json_report(failure_count: int) -> void:
+	var cases: Array[Dictionary] = []
+	for result: Dictionary in _case_results:
+		var errors: PackedStringArray = result["errors"]
+		cases.append(
+			{
+				"name": result["name"],
+				"status": "passed" if errors.is_empty() else "failed",
+				"errors": Array(errors),
+			}
+		)
+	var report_data := {
+		"suite": "m0-foundation",
+		"tests": _case_results.size(),
+		"failures": failure_count,
+		"cases": cases,
+	}
+	var report := FileAccess.open(
+		"res://build/test-results/m0-results.json",
+		FileAccess.WRITE
+	)
+	if report == null:
+		push_warning("Could not write JSON report")
+		return
+	report.store_string(JSON.stringify(report_data, "\t") + "\n")
+
+
+func _xml_escape(value: String) -> String:
+	return (
+		value.replace("&", "&amp;")
+		.replace("<", "&lt;")
+		.replace(">", "&gt;")
+		.replace('"', "&quot;")
+		.replace("'", "&apos;")
+	)
+

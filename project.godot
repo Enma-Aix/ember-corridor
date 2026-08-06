@@ -1,0 +1,109 @@
+; Engine configuration file.
+; Edit with Godot 4.7.1 Stable when possible.
+config_version=5
+
+[application]
+
+config/name="Ember Corridor"
+run/main_scene="res://scenes/boot/boot.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+App="*res://scripts/core/app.gd"
+SceneRouter="*res://scripts/core/scene_router.gd"
+EventBus="*res://scripts/core/event_bus.gd"
+DataRegistry="*res://scripts/core/data_registry.gd"
+SettingsService="*res://scripts/core/settings_service.gd"
+AudioService="*res://scripts/core/audio_service.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+
+[input]
+
+move_left={
+"deadzone": 0.2,
+"events": []
+}
+move_right={
+"deadzone": 0.2,
+"events": []
+}
+move_up={
+"deadzone": 0.2,
+"events": []
+}
+move_down={
+"deadzone": 0.2,
+"events": []
+}
+attack={
+"deadzone": 0.2,
+"events": []
+}
+jump={
+"deadzone": 0.2,
+"events": []
+}
+dodge={
+"deadzone": 0.2,
+"events": []
+}
+skill_1={
+"deadzone": 0.2,
+"events": []
+}
+skill_2={
+"deadzone": 0.2,
+"events": []
+}
+skill_3={
+"deadzone": 0.2,
+"events": []
+}
+skill_4={
+"deadzone": 0.2,
+"events": []
+}
+ultimate={
+"deadzone": 0.2,
+"events": []
+}
+interact={
+"deadzone": 0.2,
+"events": []
+}
+pause={
+"deadzone": 0.2,
+"events": []
+}
+
+[layer_names]
+
+2d_physics/layer_1="WorldStatic"
+2d_physics/layer_2="PlayerBody"
+2d_physics/layer_3="EnemyBody"
+2d_physics/layer_4="PlayerHitbox"
+2d_physics/layer_5="EnemyHitbox"
+2d_physics/layer_6="PlayerHurtbox"
+2d_physics/layer_7="EnemyHurtbox"
+2d_physics/layer_8="Interactable"
+2d_physics/layer_9="Hazard"
+2d_physics/layer_10="Sensor"
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.027, 0.031, 0.043, 1)

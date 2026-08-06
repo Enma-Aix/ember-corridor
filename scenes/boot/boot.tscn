@@ -1,0 +1,110 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/boot/boot.gd" id="1_boot"]
+
+[node name="M0Foundation" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_boot")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.027, 0.031, 0.043, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 48.0
+offset_top = 40.0
+offset_right = -48.0
+offset_bottom = -40.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.66, 0.31, 1)
+theme_override_font_sizes/font_size = 38
+text = "余烬回廊"
+
+[node name="SubtitleLabel" type="Label" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.79, 0.87, 1)
+theme_override_font_sizes/font_size = 20
+text = "M0 工程基线 · Input 与 DataRegistry 调试探针"
+
+[node name="VersionLabel" type="Label" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.56, 0.61, 0.7, 1)
+text = "version"
+
+[node name="Spacer" type="Control" parent="Margin/Content"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="DebugPanel" type="PanelContainer" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="DebugMargin" type="MarginContainer" parent="Margin/Content/DebugPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="DebugRows" type="VBoxContainer" parent="Margin/Content/DebugPanel/DebugMargin"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="StatusLabel" type="Label" parent="Margin/Content/DebugPanel/DebugMargin/DebugRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Foundation status: INITIALIZING"
+
+[node name="DeviceLabel" type="Label" parent="Margin/Content/DebugPanel/DebugMargin/DebugRows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Device: Keyboard / mouse"
+
+[node name="ActionsLabel" type="Label" parent="Margin/Content/DebugPanel/DebugMargin/DebugRows"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+text = "Active actions: none"
+
+[node name="MovementLabel" type="Label" parent="Margin/Content/DebugPanel/DebugMargin/DebugRows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Movement vector: (0.00, 0.00)"
+
+[node name="Help" type="Label" parent="Margin/Content/DebugPanel/DebugMargin/DebugRows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.67, 0.76, 1)
+text = "按键：WASD / J K L / U I O P / H / Space / Esc\n手柄：左摇杆或方向键 + 面键、肩键、摇杆键、Back、Start"
+
+[node name="ScopeNote" type="Label" parent="Margin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_color = Color(0.52, 0.56, 0.64, 1)
+text = "M0 只验证工程基础；正式战斗、关卡和 UI 将在后续里程碑实现。"
+vertical_alignment = 2
+

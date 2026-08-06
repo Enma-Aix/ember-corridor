@@ -1,0 +1,5 @@
+asset_id,file_path,asset_type,status,author_or_vendor,source_url,license,commercial_use,modification_allowed,attribution_required,proof_path,notes
+engine_godot,licenses/GODOT_LICENSE.txt,engine,planned,Godot Engine contributors,https://godotengine.org/license/,MIT,yes,yes,yes,licenses/GODOT_LICENSE.txt,发布时包含完整许可证文本
+font_primary_tbd,assets/fonts/,font,not_selected,TBD,TBD,TBD,unknown,unknown,unknown,,选择支持简体中文且允许游戏内嵌与商业发行的字体
+player_placeholder,assets/sprites/placeholders/,sprite,planned,project_team,,original,yes,yes,no,,只允许原创几何占位资源
+
