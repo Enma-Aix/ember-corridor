@@ -228,14 +228,24 @@ def validate_asset_registry(errors: list[str]) -> None:
 
 def validate_offline_boundary(errors: list[str]) -> None:
     forbidden = re.compile(
-        r"\b(HTTPRequest|WebSocketPeer|ENetMultiplayerPeer|MultiplayerAPI)\b"
+        r"\b("
+        r"HTTPRequest|HTTPClient|WebSocketPeer|WebRTCPeerConnection|"
+        r"ENetMultiplayerPeer|MultiplayerAPI|PacketPeerUDP|StreamPeerTCP|"
+        r"TCPServer|UDPServer"
+        r")\b|https?://"
     )
-    for path in sorted((ROOT / "scripts").rglob("*.gd")):
+    source_suffixes = {".gd", ".tscn", ".tres"}
+    for path in sorted(ROOT.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in source_suffixes:
+            continue
+        relative_path = path.relative_to(ROOT)
+        if ".godot" in relative_path.parts or "build" in relative_path.parts:
+            continue
         text = path.read_text(encoding="utf-8")
         match = forbidden.search(text)
         if match:
             errors.append(
-                f"offline boundary violation in {path.relative_to(ROOT)}: {match.group(1)}"
+                f"offline boundary violation in {relative_path}: {match.group(0)}"
             )
 
 
