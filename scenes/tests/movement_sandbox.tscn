@@ -1,0 +1,268 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scripts/actors/movement_sandbox.gd" id="1_sandbox"]
+[ext_resource type="PackedScene" path="res://scenes/actors/player.tscn" id="2_player"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="3_hurtbox"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_horizontal"]
+size = Vector2(1152, 24)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_vertical"]
+size = Vector2(24, 544)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_dummy_hurtbox"]
+size = Vector2(22, 48)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.055, 0.063, 0.085, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.91, 0.47, 0.16, 0.8)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="LabelSettings" id="LabelSettings_title"]
+font_size = 24
+font_color = Color(0.98, 0.72, 0.37, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_startup"]
+bg_color = Color(0.16, 0.34, 0.5, 0.95)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_active"]
+bg_color = Color(0.78, 0.3, 0.08, 0.98)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_recovery"]
+bg_color = Color(0.3, 0.24, 0.48, 0.95)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="MovementSandbox" type="Node2D"]
+script = ExtResource("1_sandbox")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 2
+color = Color(0.027, 0.031, 0.043, 1)
+
+[node name="Arena" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(64, 120, 1216, 120, 1216, 664, 64, 664)
+color = Color(0.11, 0.125, 0.16, 1)
+
+[node name="DepthBandBack" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(76, 132, 1204, 132, 1204, 292, 76, 292)
+color = Color(0.13, 0.145, 0.18, 1)
+
+[node name="CenterGuide" type="Line2D" parent="."]
+points = PackedVector2Array(76, 392, 1204, 392)
+width = 2.0
+default_color = Color(0.28, 0.31, 0.37, 0.55)
+
+[node name="WorldWalls" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="Top" type="CollisionShape2D" parent="WorldWalls"]
+position = Vector2(640, 120)
+shape = SubResource("RectangleShape2D_horizontal")
+
+[node name="Bottom" type="CollisionShape2D" parent="WorldWalls"]
+position = Vector2(640, 664)
+shape = SubResource("RectangleShape2D_horizontal")
+
+[node name="Left" type="CollisionShape2D" parent="WorldWalls"]
+position = Vector2(64, 392)
+shape = SubResource("RectangleShape2D_vertical")
+
+[node name="Right" type="CollisionShape2D" parent="WorldWalls"]
+position = Vector2(1216, 392)
+shape = SubResource("RectangleShape2D_vertical")
+
+[node name="Actors" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="PlayerRoot" parent="Actors" instance=ExtResource("2_player")]
+unique_name_in_owner = true
+position = Vector2(640, 430)
+
+[node name="Targets" type="Node2D" parent="Actors"]
+
+[node name="DummyA" type="Node2D" parent="Actors/Targets"]
+position = Vector2(700, 430)
+
+[node name="Body" type="Polygon2D" parent="Actors/Targets/DummyA"]
+polygon = PackedVector2Array(-11, -48, 11, -48, 15, -2, 9, 10, -9, 10, -15, -2)
+color = Color(0.39, 0.43, 0.52, 1)
+
+[node name="DummyAHurtbox" type="Area2D" parent="Actors/Targets/DummyA"]
+unique_name_in_owner = true
+collision_layer = 64
+collision_mask = 8
+script = ExtResource("3_hurtbox")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Actors/Targets/DummyA/DummyAHurtbox"]
+position = Vector2(0, -22)
+shape = SubResource("RectangleShape2D_dummy_hurtbox")
+
+[node name="DebugShape" type="Polygon2D" parent="Actors/Targets/DummyA/DummyAHurtbox"]
+position = Vector2(0, -22)
+polygon = PackedVector2Array(-11, -24, 11, -24, 11, 24, -11, 24)
+color = Color(0.18, 0.7, 1, 0.22)
+
+[node name="DummyB" type="Node2D" parent="Actors/Targets"]
+position = Vector2(724, 430)
+
+[node name="Body" type="Polygon2D" parent="Actors/Targets/DummyB"]
+polygon = PackedVector2Array(-11, -44, 11, -44, 15, -2, 9, 10, -9, 10, -15, -2)
+color = Color(0.49, 0.38, 0.54, 1)
+
+[node name="DummyBHurtbox" type="Area2D" parent="Actors/Targets/DummyB"]
+unique_name_in_owner = true
+collision_layer = 64
+collision_mask = 8
+script = ExtResource("3_hurtbox")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Actors/Targets/DummyB/DummyBHurtbox"]
+position = Vector2(0, -22)
+shape = SubResource("RectangleShape2D_dummy_hurtbox")
+
+[node name="DebugShape" type="Polygon2D" parent="Actors/Targets/DummyB/DummyBHurtbox"]
+position = Vector2(0, -22)
+polygon = PackedVector2Array(-11, -24, 11, -24, 11, 24, -11, 24)
+color = Color(0.18, 0.7, 1, 0.22)
+
+[node name="Hud" type="CanvasLayer" parent="."]
+
+[node name="Title" type="Label" parent="Hud"]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 420.0
+offset_bottom = 60.0
+text = "余烬回廊 · M1 战斗核心沙盒"
+label_settings = SubResource("LabelSettings_title")
+
+[node name="Instruction" type="Label" parent="Hud"]
+offset_left = 34.0
+offset_top = 62.0
+offset_right = 1040.0
+offset_bottom = 92.0
+theme_override_colors/font_color = Color(0.7, 0.74, 0.82, 1)
+text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：浮空攻击预览"
+
+[node name="DebugPanel" type="PanelContainer" parent="Hud"]
+unique_name_in_owner = true
+offset_left = 1010.0
+offset_top = 24.0
+offset_right = 1248.0
+offset_bottom = 346.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Margin" type="MarginContainer" parent="Hud/DebugPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="MovementLabel" type="Label" parent="Hud/DebugPanel/Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Ground\nMove velocity\nFacing\nElevation\nVertical velocity\nGrounded\nHit height\nLow probe\nDodge\nInvulnerable\nDodge cooldown\nDodge direction"
+
+[node name="AttackTimelinePanel" type="PanelContainer" parent="Hud"]
+unique_name_in_owner = true
+offset_left = 32.0
+offset_top = 536.0
+offset_right = 716.0
+offset_bottom = 704.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="TimelineMargin" type="MarginContainer" parent="Hud/AttackTimelinePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 9
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 9
+
+[node name="TimelineVBox" type="VBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="TimelineTitle" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.72, 0.37, 1)
+text = "CMB-006 · attack.dev.launcher_placeholder"
+
+[node name="TimelineBar" type="HBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StartupSegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(108, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_startup")
+
+[node name="StartupLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/StartupSegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Startup\n1-6"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ActiveSegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(54, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_active")
+
+[node name="ActiveLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/ActiveSegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Active\n7-9"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RecoverySegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(198, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_recovery")
+
+[node name="RecoveryLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/RecoverySegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Recovery\n10-20"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TimelineStatusLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Preview: idle · press J / XInput X · total 20 tick"
+
+[node name="CancelWindowsLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.82, 0.94, 1)
+text = "Cancel: tick 15-20 → action.dodge"
+
+[node name="HitContactLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.9, 1, 1)
+text = "Contacts: 0 accepted · hit_id idle"

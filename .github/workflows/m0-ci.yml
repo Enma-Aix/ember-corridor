@@ -1,0 +1,409 @@
+name: Ember Corridor CI
+
+on:
+  push:
+    branches:
+      - codex/m0-foundation
+      - "codex/m1-*"
+  pull_request:
+    branches:
+      - main
+      - codex/m0-foundation
+      - "codex/m1-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-test-export:
+    name: Validate, test, and export Windows Debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run repository static validation
+        run: python3 tools/validate_project.py
+
+      - name: Download Godot 4.7.1
+        run: |
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/?flavor=stable&platform=linux.64&slug=linux.x86_64.zip&version=4.7.1" \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          install -m 0755 /tmp/godot/Godot_v4.7.1-stable_linux.x86_64 "$RUNNER_TEMP/godot"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP:$PATH"
+          godot --version | tee build-godot-version.txt
+          grep -q "^4.7.1.stable" build-godot-version.txt
+
+      - name: Import project headlessly
+        run: godot --headless --path . --import --quit
+
+      - name: Validate Resource data
+        run: godot --headless --path . --script res://scripts/tools/validate_data.gd
+
+      - name: Run headless tests
+        run: |
+          set -o pipefail
+          godot --headless --path . --script res://tests/test_runner.gd 2>&1 \
+            | tee build/test-results/game-tests.txt
+          if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/game-tests.txt; then
+            exit 1
+          fi
+
+      - name: Smoke-test the boot scene
+        run: |
+          godot --headless --path . --quit-after 120 2>&1 \
+            | tee build/test-results/project-boot.txt
+          grep -Fq "[MovementSandbox] MOV-001 sandbox ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[ElevationSandbox] MOV-002 sandbox ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[DodgeSandbox] MOV-003 sandbox ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[StateMachineSandbox] CMB-001 core ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[HitboxSandbox] CMB-003 hit detection ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[DamageSandbox] CMB-004 formula ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[JuggleSandbox] CMB-006 airborne control ready" \
+            build/test-results/project-boot.txt
+          if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
+            exit 1
+          fi
+
+      - name: Install official export templates
+        run: |
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/?flavor=stable&platform=templates&slug=export_templates.tpz&version=4.7.1" \
+            --output /tmp/export_templates.tpz
+          mkdir -p /tmp/export_templates
+          unzip -q /tmp/export_templates.tpz -d /tmp/export_templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.1.stable"
+          cp -R /tmp/export_templates/templates/. "$HOME/.local/share/godot/export_templates/4.7.1.stable/"
+
+      - name: Export Windows Debug build
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-debug "Windows Desktop" build/windows/EmberCorridor.exe
+          test -s build/windows/EmberCorridor.exe
+          cp licenses/GODOT-ENGINE-LICENSE.md build/windows/GODOT-ENGINE-LICENSE.md
+          cp docs/ASSET-LICENSE-REGISTER.csv build/windows/ASSET-LICENSE-REGISTER.csv
+
+      - name: Smoke-test packaged resources
+        run: |
+          godot --headless --path . --export-pack "Windows Desktop" "$RUNNER_TEMP/ember-corridor-m0.pck"
+          godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 2>&1 \
+            | tee build/test-results/packaged-smoke.txt
+          grep -Fq "[DataRegistry] Loaded 8 definition(s)" build/test-results/packaged-smoke.txt
+          grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[HitboxSandbox] CMB-003 hit detection ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[DamageSandbox] CMB-004 formula ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[JuggleSandbox] CMB-006 airborne control ready" \
+            build/test-results/packaged-smoke.txt
+          if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/packaged-smoke.txt; then
+            exit 1
+          fi
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m0-test-reports
+          path: build/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Windows Debug build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ember-corridor-windows-debug
+          path: build/windows/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-native-test:
+    name: Run tests and exported game natively on Windows
+    needs: validate-test-export
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run repository static validation
+        run: python tools/validate_project.py
+
+      - name: Download Godot 4.7.1 for Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "godot-windows.zip"
+          $destination = Join-Path $env:RUNNER_TEMP "godot-windows"
+          Invoke-WebRequest `
+            -Uri "https://downloads.godotengine.org/?flavor=stable&platform=windows.64&slug=win64.exe.zip&version=4.7.1" `
+            -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $destination -Force
+          $downloadedGodot = Get-ChildItem `
+            -Path $destination `
+            -Filter "Godot_v4.7.1-stable_win64.exe" `
+            -File `
+            -Recurse `
+            | Select-Object -First 1
+          if ($null -eq $downloadedGodot) {
+            throw "Godot 4.7.1 Windows executable was not found in the archive"
+          }
+          $godot = Join-Path $env:RUNNER_TEMP "godot.exe"
+          Copy-Item $downloadedGodot.FullName $godot
+          & $godot --version 2>&1 | Tee-Object -FilePath build-godot-windows-version.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Godot --version failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String -Path build-godot-windows-version.txt -Pattern "^4\.7\.1\.stable" -Quiet)) {
+            throw "Downloaded Windows Godot version is not 4.7.1 Stable"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP
+
+      - name: Import project natively on Windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/test-results/windows | Out-Null
+          & godot.exe --headless --path . --import --quit 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/import.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows project import failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Validate Resource data natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --script res://scripts/tools/validate_data.gd 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/data-validation.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows Resource validation failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Run game tests natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --script res://tests/test_runner.gd 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/game-tests.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows game tests failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/game-tests.txt `
+            -Pattern "PROJECT TEST SUMMARY: 64 passed, 0 failed" `
+            -Quiet)) {
+            throw "Windows game-test summary was not found"
+          }
+          if (Select-String `
+            -Path build/test-results/windows/game-tests.txt `
+            -Pattern "^(SCRIPT )?ERROR:" `
+            -Quiet) {
+            throw "Windows game tests logged a Godot runtime error"
+          }
+
+      - name: Smoke-test the boot scene natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --quit-after 120 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/project-boot.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows project boot failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DataRegistry] Loaded 8 definition(s)" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not initialize DataRegistry"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[MovementSandbox] MOV-001 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-001 sandbox"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[ElevationSandbox] MOV-002 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-002 elevation sandbox"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DodgeSandbox] MOV-003 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-003 dodge sandbox"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[StateMachineSandbox] CMB-001 core ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-001 state-machine core"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[AttackTimelineSandbox] CMB-002 timeline ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-002 attack timeline"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[HitboxSandbox] CMB-003 hit detection ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-003 hit detection"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DamageSandbox] CMB-004 formula ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-004 damage formula"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[CombatantSandbox] CMB-005 combatant reactions ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-005 combatant model"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[JuggleSandbox] CMB-006 airborne control ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-006 juggle model"
+          }
+          if (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "^(SCRIPT )?ERROR:" `
+            -Quiet) {
+            throw "Windows project boot logged a Godot runtime error"
+          }
+
+      - name: Download Windows Debug artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ember-corridor-windows-debug
+          path: build/windows-artifact
+
+      - name: Run exported game natively
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Get-ChildItem `
+            -Path build/windows-artifact `
+            -Filter "EmberCorridor.exe" `
+            -File `
+            -Recurse `
+            | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "EmberCorridor.exe was not found in the downloaded artifact"
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)
+          if ($bytes.Length -lt 256 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            throw "Exported artifact is not a Windows PE executable"
+          }
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x8664) {
+            throw ("Unexpected PE machine type: 0x{0:X4}" -f $machine)
+          }
+
+          $stdout = Join-Path $PWD "build/test-results/windows/exported-game.stdout.txt"
+          $stderr = Join-Path $PWD "build/test-results/windows/exported-game.stderr.txt"
+          $process = Start-Process `
+            -FilePath $exe.FullName `
+            -ArgumentList @("--headless", "--quit-after", "120") `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Exported Windows game did not exit within 30 seconds"
+          }
+          $process.WaitForExit()
+          Get-Content $stdout
+          if ((Test-Path $stderr) -and (Get-Item $stderr).Length -gt 0) {
+            Get-Content $stderr
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Exported Windows game exited with code $($process.ExitCode)"
+          }
+
+          $combinedLog = (Get-Content $stdout -Raw) + "`n" + (Get-Content $stderr -Raw)
+          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 8 definition\(s\)") {
+            throw "Exported Windows game did not initialize DataRegistry"
+          }
+          if ($combinedLog -notmatch "\[App\] Foundation services initialized") {
+            throw "Exported Windows game did not finish service initialization"
+          }
+          if ($combinedLog -notmatch "\[MovementSandbox\] MOV-001 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-001 sandbox"
+          }
+          if ($combinedLog -notmatch "\[ElevationSandbox\] MOV-002 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-002 elevation sandbox"
+          }
+          if ($combinedLog -notmatch "\[DodgeSandbox\] MOV-003 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-003 dodge sandbox"
+          }
+          if ($combinedLog -notmatch "\[StateMachineSandbox\] CMB-001 core ready") {
+            throw "Exported Windows game did not instantiate the CMB-001 state-machine core"
+          }
+          if ($combinedLog -notmatch "\[AttackTimelineSandbox\] CMB-002 timeline ready") {
+            throw "Exported Windows game did not instantiate the CMB-002 attack timeline"
+          }
+          if ($combinedLog -notmatch "\[HitboxSandbox\] CMB-003 hit detection ready") {
+            throw "Exported Windows game did not instantiate the CMB-003 hit detection"
+          }
+          if ($combinedLog -notmatch "\[DamageSandbox\] CMB-004 formula ready") {
+            throw "Exported Windows game did not instantiate the CMB-004 damage formula"
+          }
+          if ($combinedLog -notmatch "\[CombatantSandbox\] CMB-005 combatant reactions ready") {
+            throw "Exported Windows game did not instantiate the CMB-005 combatant model"
+          }
+          if ($combinedLog -notmatch "\[JuggleSandbox\] CMB-006 airborne control ready") {
+            throw "Exported Windows game did not instantiate the CMB-006 juggle model"
+          }
+          if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
+            throw "Exported Windows game logged a Godot runtime error"
+          }
+
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "Executable: $($exe.FullName)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt
+          "Bytes: $($exe.Length)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+          "SHA256: $hash" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+          "PE machine: x86-64 (0x8664)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+
+      - name: Upload Windows-native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m0-windows-native-test-reports
+          path: build/test-results/windows/
+          if-no-files-found: error
+          retention-days: 14

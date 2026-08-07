@@ -1,0 +1,129 @@
+# 开发与验收
+
+## 分支规则
+
+- main 只通过 Pull Request 更新。
+- 每个任务使用独立分支，并在提交与 PR 中标明 Backlog ID。
+- M0 分支固定为 codex/m0-foundation。
+- M1 MOV-001 分支固定为 codex/m1-mov-001，并叠加在 M0 绿色提交上。
+- M1 MOV-002 分支固定为 codex/m1-mov-002，并叠加在 MOV-001 绿色提交上。
+- M1 MOV-003 分支固定为 codex/m1-mov-003，并叠加在 MOV-002 绿色提交上。
+- M1 CMB-001 分支固定为 codex/m1-cmb-001，并叠加在 MOV-003 绿色提交上。
+- M1 CMB-002 分支固定为 codex/m1-cmb-002，并叠加在 CMB-001 绿色提交上。
+- M1 CMB-003 分支固定为 codex/m1-cmb-003，并叠加在 CMB-002 绿色提交上。
+- M1 CMB-004 分支固定为 codex/m1-cmb-004，并叠加在 CMB-003 绿色提交上。
+- M1 CMB-005 分支固定为 codex/m1-cmb-005，并叠加在 CMB-004 绿色提交上。
+- M1 CMB-006 分支固定为 codex/m1-cmb-006，并叠加在 CMB-005 绿色提交上。
+- 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
+
+## M0 人工验收
+
+1. 用 Godot 4.7.1 Standard 打开工程，确认无解析错误。
+2. 启动 scenes/boot/boot.tscn。
+3. 用键盘逐项按下 Action，确认 Active actions 更新。
+4. 接入 XInput 手柄，移动摇杆并按按钮，确认 Device 切换为 XInput gamepad。
+5. 切回键盘，确认 Device 切换回来。
+6. 运行 headless 数据校验与测试命令，确认退出码为 0。
+7. 创建 build/windows 目录，运行 Windows Desktop Debug 导出，确认生成 EXE 与 PCK 或内嵌 PCK。
+8. 检查 GitHub Actions 的 Windows Debug artifact。
+
+## 失败处理
+
+- GDScript 解析错误、数据 ID 冲突、缺失定义或测试失败均阻断合并。
+- 日志必须保留时间、级别和模块，不允许静默吞掉错误。
+- Release 构建隐藏 M0 调试面板；调试信息只能在 Debug 构建显示。
+
+## M0 明确不做
+
+- 玩家移动、攻击、敌人、房间和掉落玩法。
+- 正式 UI 视觉和 Figma 高保真还原。
+- 存档实现、联网、账号、PVP、排行榜或云服务。
+- 广告、抽卡、付费宝箱、每日任务、体力和高级货币。
+- 第三方 Godot 插件。
+
+## MOV-001 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 使用 WASD 分别测试四方向与四个对角方向。
+3. 确认纵深速度显示为 288 px/s，横向显示为 320 px/s。
+4. 纯 W/S 输入不改变朝向，A/D 输入稳定改变朝向。
+5. 持续向四面边界移动，确认玩家无法穿过 WorldStatic。
+6. Windows Debug EXE 启动后重复键鼠检查；实体 XInput 手柄检查记录为人工验收。
+
+## MOV-002 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 使用 K 和 XInput A 分别跳跃，确认只能在 grounded 时起跳。
+3. 确认 VisualRoot 上升和下降，CharacterBody2D 地面坐标与 Shadow 不随高度偏移。
+4. 跳跃同时移动，确认 X/Y 地面运动和 WorldStatic 墙体阻挡继续生效。
+5. 确认调试面板的 elevation 最终稳定回到 0，vertical velocity 回到 0，grounded 为 true。
+6. 确认低位 0 至 24 高度探针在跳高后显示 clear，并在落地后恢复 overlap。
+
+## MOV-003 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 使用 WASD + L 和左摇杆 + XInput B 测试八方向闪避。
+3. 确认无输入闪避沿当前朝向，纯纵深闪避不改变朝向。
+4. 确认 HUD 只在第 4 至 13 tick 显示 Invulnerable = true。
+5. 确认动作第 24 tick 结束，随后冷却从 45 减至 0 才可再次启动。
+6. 贴近四面边界反复闪避，确认 CharacterBody2D 不穿过 WorldStatic。
+
+## CMB-001 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 确认日志包含 `[StateMachineSandbox] CMB-001 core ready`，且无持续错误或警告。
+3. 运行 tests/test_runner.gd，确认合法转换、非法转换、无效配置和终止状态用例通过。
+4. 重复移动、跳跃、闪避验收，确认通用状态机尚未改变现有玩家操作行为。
+5. 检查状态机脚本不依赖动画、VFX、UI、音频或 Autoload。
+
+## CMB-002 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 确认 Debug 底部色条按 6/3/11 tick 显示 startup、active、recovery。
+3. 使用 J 与 XInput X 启动时间线预览，确认阶段边界为 1–6、7–9、10–20。
+4. 确认 tick 15–20 显示 `action.dodge`，窗口外不显示取消目标。
+5. 运行中连续按 attack，确认时间线不被重启；完成后可重新启动。
+6. 确认 Release 构建隐藏时间线 Debug 面板，且既有移动、跳跃、闪避不受影响。
+
+## CMB-003 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[HitboxSandbox] CMB-003 hit detection ready`。
+2. Debug 构建中确认蓝色 Hurtbox 可见，橙色 Hitbox 只在 A1 的 tick 7–9 可见。
+3. 面向右侧两个训练目标按 J / XInput X，确认每个目标对同一 hit_id 只计数一次。
+4. 动作完成后再次攻击，确认新 hit_id 可重新接触两个目标。
+5. 移到目标另一侧测试左右镜像，并在纵深边缘、跳跃和闪避无敌期间重复测试。
+6. 暂停恢复不重复计数；Release 构建隐藏碰撞图形和接触调试 HUD。
+7. 确认 CMB-003 接触层没有直接修改生命、韧性或受击状态。
+
+## CMB-004 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[DamageSandbox] CMB-004 formula ready`。
+2. 面向两个训练目标按 J / XInput X，确认 HUD 显示 2 次结算、总计 143、范围 55–88、暴击 0。
+3. 重复攻击并从左右两侧测试，确认每个新 hit_id 的公式结果相同，朝向不改变伤害。
+4. 在纵深边缘、跳跃、闪避无敌和暂停恢复后重复，只有被 CMB-003 接受的接触产生结果。
+5. 运行 tests/test_runner.gd，确认公式、取整、最少伤害、负防御、暴击边界/上限、非法输入和释放用例通过。
+6. 确认 DamagePacket、HitResult 和 DamageResolverModel 不依赖场景、动画、UI、音频、VFX 或 Autoload。
+7. 确认 DamageResolverModel 本身仍不修改生命、当前韧性、破防或受击状态；当前分支只在其返回后由 CombatantModel 应用结果。
+
+## CMB-005 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[CombatantSandbox] CMB-005 combatant reactions ready`。
+2. 面向两个训练目标按 J / XInput X，确认 HUD 仍显示 2 次结算、总计 143、范围 55–88、暴击 0。
+3. 确认普通目标显示 `HP 212/300 · Poise 12/24`；精英目标显示 `HP 245/300 · Poise 0/12 · poise_break`。
+4. 重复攻击，确认同一 hit_id 不重复应用生命或韧性；新攻击正常应用，失败目标关闭 Hurtbox。
+5. 等待 180 tick，确认未破防目标的韧性开始恢复；破防结束时确认韧性回满并获得 60 tick 韧性减伤。
+6. 运行 tests/test_runner.gd，确认普通、精英、首领策略、破防边界、恢复、失败、事务性和释放用例通过。
+7. 暂停与恢复场景，确认显式 fixed tick 以外的渲染帧不推进生命、韧性、恢复或反应计时器。
+8. 确认 CMB-003 接触层和 CMB-004 公式层保持无状态；只有 CombatantModel.apply_damage 修改目标状态。
+
+## CMB-006 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[JuggleSandbox] CMB-006 airborne control ready`。
+2. 面向训练目标使用 J / XInput X，确认普通目标升空，精英目标保持地面；HUD 显示普通目标的 Air 与 JR。
+3. 在普通目标空中时继续命中，确认每次命中增加 JR，后续浮空幅度降低且下落加快。
+4. 确认连续空中控制在第 210 个 fixed tick 强制落地，并进入完整 30 tick 倒地窗口。
+5. 运行 tests/test_runner.gd，确认倒地窗口最多一次显式地面追击，普通倒地命中与第二次追击均返回稳定拒绝码。
+6. 暂停场景，确认没有 fixed tick 时高度、抗性、浮空与倒地计时不推进；恢复后继续。
+7. 确认破防和目标失效会清空浮空状态，普通/精英/首领原有生命、韧性和破防策略保持不变。
+8. 确认测试汇总为 `PROJECT TEST SUMMARY: 64 passed, 0 failed`，且静态校验、数据校验、主场景与 PCK 启动均无 Godot 错误。
+9. 检查 GitHub Actions 的 Windows 原生作业：项目导入、64 项测试、场景启动和导出 EXE 实际启动全部通过。

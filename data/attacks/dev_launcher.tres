@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="AttackDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/attack_definition.gd" id="1_attack"]
+[ext_resource type="Script" path="res://scripts/data/attack_cancel_window.gd" id="2_cancel"]
+
+[sub_resource type="Resource" id="AttackCancelWindow_dodge"]
+script = ExtResource("2_cancel")
+start_tick = 15
+end_tick = 20
+target_tags = Array[StringName]([&"action.dodge"])
+
+[resource]
+script = ExtResource("1_attack")
+definition_id = &"attack.dev.launcher_placeholder"
+display_name_key = &"attack.dev.launcher_placeholder.name"
+tags = Array[StringName]([&"placeholder", &"normal_attack", &"control.launch"])
+startup_ticks = 6
+active_ticks = 3
+recovery_ticks = 11
+cancel_windows = Array[ExtResource("2_cancel")]([SubResource("AttackCancelWindow_dodge")])
+hit_stop_ticks = 3
+feedback_strength = "light"
+damage_coefficient = 1.0
+flat_damage = 10.0
+poise_damage = 12.0
+hit_tags = Array[StringName]([&"damage.physical", &"attack.normal", &"control.launch"])
+launch_profile = &"combat.launch.dev_launcher"
+hitbox_size = Vector2(88, 44)
+hitbox_offset = Vector2(48, -22)
+min_hit_height = 0.0
+max_hit_height = 160.0
+rehit_interval_ticks = 0

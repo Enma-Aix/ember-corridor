@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="CombatReactionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/combat_reaction_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+definition_id = &"combat.reaction.normal"
+display_name_key = &"combat.reaction.normal.name"
+tags = Array[StringName]([&"reaction.normal"])
+strategy = "normal"
+react_on_health_hit = true
+hit_reaction_ticks = 12
+break_duration_ticks = 45
+hit_knockback = 16.0
+break_knockback = 40.0
+poise_recovery_per_tick = 1.0
+post_break_poise_damage_multiplier = 0.5
+forced_break_tags = Array[StringName]([])
+can_be_launched = true
+juggle_gravity = 1800.0
+juggle_resistance_per_air_hit = 1.0
+juggle_gravity_multiplier_per_resistance = 0.25
+juggle_maximum_gravity_multiplier = 2.5
+juggle_launch_reduction_per_resistance = 0.15
+juggle_minimum_launch_multiplier = 0.35

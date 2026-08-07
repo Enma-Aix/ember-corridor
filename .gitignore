@@ -1,0 +1,11 @@
+.godot/
+.import/
+*.import
+build/*
+!build/.gdignore
+export/
+*.tmp
+*.log
+*.translation
+.DS_Store
+Thumbs.db

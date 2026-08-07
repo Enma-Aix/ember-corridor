@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CharacterDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/character_definition.gd" id="1_character"]
+
+[resource]
+script = ExtResource("1_character")
+definition_id = &"character.dev_placeholder"
+display_name_key = &"character.dev_placeholder.name"
+tags = Array[StringName]([&"placeholder", &"m0"])
+
