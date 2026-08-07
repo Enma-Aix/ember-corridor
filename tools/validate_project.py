@@ -87,7 +87,12 @@ REQUIRED_FILES = (
     "scripts/combat/damage_packet.gd",
     "scripts/combat/hit_result.gd",
     "scripts/combat/damage_resolver_model.gd",
+    "scripts/data/combat_reaction_profile.gd",
+    "scripts/combat/combatant_model.gd",
     "data/attacks/dev_a1.tres",
+    "data/combat/reaction_profiles/normal.tres",
+    "data/combat/reaction_profiles/elite.tres",
+    "data/combat/reaction_profiles/boss.tres",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
@@ -97,6 +102,7 @@ REQUIRED_FILES = (
     "docs/M1-CMB-002-TEST-PLAN.md",
     "docs/M1-CMB-003-TEST-PLAN.md",
     "docs/M1-CMB-004-TEST-PLAN.md",
+    "docs/M1-CMB-005-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -128,6 +134,7 @@ def main() -> int:
     validate_attack_timeline_contract(errors)
     validate_hit_detection_contract(errors)
     validate_damage_formula_contract(errors)
+    validate_combatant_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -763,6 +770,142 @@ def validate_damage_formula_contract(errors: list[str]) -> None:
                 errors.append(f"CMB-004 sandbox missing marker: {marker}")
 
 
+def validate_combatant_contract(errors: list[str]) -> None:
+    profile_path = ROOT / "scripts/data/combat_reaction_profile.gd"
+    combatant_path = ROOT / "scripts/combat/combatant_model.gd"
+    result_path = ROOT / "scripts/combat/hit_result.gd"
+    hurtbox_path = ROOT / "scripts/combat/hurtbox_component.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    profile_resources = {
+        "normal": ROOT / "data/combat/reaction_profiles/normal.tres",
+        "elite": ROOT / "data/combat/reaction_profiles/elite.tres",
+        "boss": ROOT / "data/combat/reaction_profiles/boss.tres",
+    }
+    if not profile_path.is_file() or not combatant_path.is_file():
+        return
+
+    profile_text = profile_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name CombatReactionProfile",
+        "extends BaseDefinition",
+        'SUPPORTED_STRATEGIES := [&"normal", &"elite", &"boss"]',
+        "var strategy",
+        "var react_on_health_hit",
+        "var hit_reaction_ticks",
+        "var break_duration_ticks",
+        "var poise_recovery_per_tick",
+        "var post_break_poise_damage_multiplier",
+        "var forced_break_tags: Array[StringName]",
+        "func has_forced_break_tag",
+        "func validation_errors",
+    ):
+        if marker not in profile_text:
+            errors.append(f"CMB-005 reaction profile missing marker: {marker}")
+
+    combatant_text = combatant_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name CombatantModel",
+        "extends RefCounted",
+        "signal health_changed",
+        "signal poise_changed",
+        "signal reaction_changed",
+        "signal poise_broken",
+        "signal defeated",
+        "const POISE_RECOVERY_DELAY_TICKS := 3 * TICKS_PER_SECOND",
+        "const POST_BREAK_PROTECTION_TICKS := 1 * TICKS_PER_SECOND",
+        'const REACTION_HIT_STUN := &"hit_stun"',
+        'const REACTION_POISE_BREAK := &"poise_break"',
+        'const REACTION_DEFEATED := &"defeated"',
+        "func configure",
+        "duplicate(true)",
+        "func can_receive_hit",
+        "func apply_damage",
+        "func heal",
+        "func advance_tick",
+        "func validation_errors",
+        "with_application_outcome",
+    ):
+        if marker not in combatant_text:
+            errors.append(f"CMB-005 CombatantModel missing marker: {marker}")
+
+    forbidden_dependencies = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|"
+        r"GameLog|RandomNumberGenerator)\b|\brand[fi]_range\b|\brand[fi]\b|"
+        r"get_node\s*\(|extends\s+(Node|Area2D)",
+        "\n".join((profile_text, combatant_text)),
+    )
+    if forbidden_dependencies:
+        errors.append(
+            "CMB-005 combatant core depends on scene, presentation, or RNG: "
+            f"{forbidden_dependencies.group(0)}"
+        )
+
+    if result_path.is_file():
+        result_text = result_path.read_text(encoding="utf-8")
+        if "func with_application_outcome" not in result_text:
+            errors.append("CMB-005 HitResult cannot create an immutable applied outcome")
+
+    if hurtbox_path.is_file():
+        hurtbox_text = hurtbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'set_deferred("monitoring", enabled)',
+            'set_deferred("monitorable", enabled)',
+            'collision_shape.set_deferred("disabled", not enabled)',
+        ):
+            if marker not in hurtbox_text:
+                errors.append(
+                    "CMB-005 defeated Hurtbox must defer physics-state changes: "
+                    f"{marker}"
+                )
+
+    expected_resources = {
+        "normal": (
+            'definition_id = &"combat.reaction.normal"',
+            'strategy = "normal"',
+            "react_on_health_hit = true",
+            "hit_reaction_ticks = 12",
+            "break_duration_ticks = 45",
+        ),
+        "elite": (
+            'definition_id = &"combat.reaction.elite"',
+            'strategy = "elite"',
+            "react_on_health_hit = false",
+            "hit_reaction_ticks = 0",
+            "break_duration_ticks = 90",
+        ),
+        "boss": (
+            'definition_id = &"combat.reaction.boss"',
+            'strategy = "boss"',
+            "react_on_health_hit = false",
+            "break_duration_ticks = 60",
+            '&"reaction.boss_break"',
+        ),
+    }
+    for strategy, resource_path in profile_resources.items():
+        if not resource_path.is_file():
+            continue
+        resource_text = resource_path.read_text(encoding="utf-8")
+        for marker in expected_resources[strategy]:
+            if marker not in resource_text:
+                errors.append(
+                    f"CMB-005 {strategy} reaction Resource missing marker: {marker}"
+                )
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'GameLog.info(&"CombatantSandbox", "CMB-005 combatant reactions ready")',
+            "CombatantModelScript.new",
+            "target.apply_damage(packet, result)",
+            "combatant.advance_tick()",
+            "target_hurtbox.set_accepting_hits(false)",
+            "Normal HP %d/%d",
+            "Elite HP %d/%d",
+        ):
+            if marker not in sandbox_text:
+                errors.append(f"CMB-005 sandbox missing marker: {marker}")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -773,17 +916,18 @@ def validate_workflow(errors: list[str]) -> None:
         "tools/validate_project.py",
         "res://scripts/tools/validate_data.gd",
         "res://tests/test_runner.gd",
+        "build/test-results/game-tests.txt",
         '--export-debug "Windows Desktop"',
         "mkdir -p build/windows",
         "cp licenses/GODOT-ENGINE-LICENSE.md",
         "cp docs/ASSET-LICENSE-REGISTER.csv",
         '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
-        'grep -Fq "[DataRegistry] Loaded 2 definition(s)"',
+        'grep -Fq "[DataRegistry] Loaded 5 definition(s)"',
         "actions/upload-artifact@v4",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 49 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 57 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
@@ -792,6 +936,7 @@ def validate_workflow(errors: list[str]) -> None:
         'grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready"',
         'grep -Fq "[HitboxSandbox] CMB-003 hit detection ready"',
         'grep -Fq "[DamageSandbox] CMB-004 formula ready"',
+        'grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:

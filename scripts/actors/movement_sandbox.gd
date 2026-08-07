@@ -13,7 +13,17 @@ const DamagePacketScript := preload("res://scripts/combat/damage_packet.gd")
 const DamageResolverModelScript := preload(
 	"res://scripts/combat/damage_resolver_model.gd"
 )
+const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
 const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
+const PreviewNormalReactionProfile := preload(
+	"res://data/combat/reaction_profiles/normal.tres"
+)
+const PreviewEliteReactionProfile := preload(
+	"res://data/combat/reaction_profiles/elite.tres"
+)
+const PreviewBossReactionProfile := preload(
+	"res://data/combat/reaction_profiles/boss.tres"
+)
 
 const PREVIEW_BASE_ATTACK := 100.0
 const PREVIEW_CRIT_CHANCE := 0.05
@@ -21,6 +31,9 @@ const PREVIEW_CRIT_MULTIPLIER := 1.5
 const PREVIEW_CRITICAL_ROLL := 0.5
 const DUMMY_A_DEFENSE := 25.0
 const DUMMY_B_DEFENSE := 100.0
+const DUMMY_MAXIMUM_HEALTH := 300
+const DUMMY_A_MAXIMUM_POISE := 24.0
+const DUMMY_B_MAXIMUM_POISE := 12.0
 
 @onready var player: PlayerGroundMovementController = %PlayerRoot
 @onready var debug_panel: PanelContainer = %DebugPanel
@@ -58,6 +71,7 @@ var _total_preview_damage := 0
 var _minimum_preview_damage := 0
 var _maximum_preview_damage := 0
 var _critical_preview_count := 0
+var _combatants: Dictionary[int, CombatantModel] = {}
 
 
 func _ready() -> void:
@@ -71,9 +85,11 @@ func _ready() -> void:
 	_configure_attack_timeline_preview()
 	_configure_hit_detection_preview()
 	_configure_damage_preview()
+	_configure_combatant_preview()
 
 
 func _physics_process(_delta: float) -> void:
+	_advance_combatant_preview()
 	_sync_player_hurtbox()
 	if Input.is_action_just_pressed(&"attack") and not attack_timeline.is_running:
 		var start_errors := attack_timeline.start(attack_definition)
@@ -222,6 +238,66 @@ func _configure_damage_preview() -> void:
 	GameLog.info(&"DamageSandbox", "CMB-004 formula ready")
 
 
+func _configure_combatant_preview() -> void:
+	var normal_profile := PreviewNormalReactionProfile as CombatReactionProfile
+	var elite_profile := PreviewEliteReactionProfile as CombatReactionProfile
+	var boss_profile := PreviewBossReactionProfile as CombatReactionProfile
+	if normal_profile == null or elite_profile == null or boss_profile == null:
+		push_error("[CMB-005] preview reaction profiles could not be loaded")
+		return
+
+	var normal_combatant: CombatantModel = CombatantModelScript.new()
+	var normal_errors := normal_combatant.configure(
+		dummy_a_hurtbox.combatant_instance_id,
+		&"enemy",
+		DUMMY_MAXIMUM_HEALTH,
+		DUMMY_A_MAXIMUM_POISE,
+		DUMMY_A_DEFENSE,
+		normal_profile
+	)
+	var elite_combatant: CombatantModel = CombatantModelScript.new()
+	var elite_errors := elite_combatant.configure(
+		dummy_b_hurtbox.combatant_instance_id,
+		&"enemy",
+		DUMMY_MAXIMUM_HEALTH,
+		DUMMY_B_MAXIMUM_POISE,
+		DUMMY_B_DEFENSE,
+		elite_profile
+	)
+	var boss_contract: CombatantModel = CombatantModelScript.new()
+	var boss_errors := boss_contract.configure(
+		999_005,
+		&"enemy",
+		1000,
+		36.0,
+		150.0,
+		boss_profile
+	)
+	for message: String in normal_errors:
+		push_error("[CMB-005] normal preview: %s" % message)
+	for message: String in elite_errors:
+		push_error("[CMB-005] elite preview: %s" % message)
+	for message: String in boss_errors:
+		push_error("[CMB-005] boss contract: %s" % message)
+	if (
+		not normal_errors.is_empty()
+		or not elite_errors.is_empty()
+		or not boss_errors.is_empty()
+	):
+		return
+	if (
+		normal_combatant.reaction_strategy != &"normal"
+		or elite_combatant.reaction_strategy != &"elite"
+		or boss_contract.reaction_strategy != &"boss"
+	):
+		push_error("[CMB-005] reaction profiles did not preserve their strategies")
+		return
+	_combatants[normal_combatant.instance_id] = normal_combatant
+	_combatants[elite_combatant.instance_id] = elite_combatant
+	_update_hit_contact_label()
+	GameLog.info(&"CombatantSandbox", "CMB-005 combatant reactions ready")
+
+
 func _start_attack_hitbox() -> void:
 	_attack_sequence += 1
 	_current_hit_id = StringName(
@@ -258,26 +334,43 @@ func _sync_player_hurtbox() -> void:
 
 func _on_hit_accepted(contact: HitContact) -> void:
 	_accepted_contact_count += 1
+	var target: CombatantModel = _combatants.get(contact.target_instance_id)
+	if target == null or not target.can_receive_hit():
+		push_error("[CMB-005] accepted contact has no available target combatant")
+		_update_hit_contact_label()
+		return
 	var packet := _build_preview_damage_packet()
 	if packet == null:
 		push_error("[CMB-004] accepted contact could not create a DamagePacket")
 		_update_hit_contact_label()
 		return
-	var result := damage_resolver.resolve(packet, _target_defense(contact))
+	var result := damage_resolver.resolve(packet, target.defense)
 	if not result.accepted:
 		push_error("[CMB-004] damage resolution rejected: %s" % result.rejection_code)
 		_update_hit_contact_label()
 		return
+	var applied_result := target.apply_damage(packet, result)
+	if not applied_result.accepted:
+		push_error(
+			"[CMB-005] combatant application rejected: %s"
+			% applied_result.rejection_code
+		)
+		_update_hit_contact_label()
+		return
 	_resolved_damage_count += 1
-	_total_preview_damage += result.final_damage
+	_total_preview_damage += applied_result.final_damage
 	if _resolved_damage_count == 1:
-		_minimum_preview_damage = result.final_damage
-		_maximum_preview_damage = result.final_damage
+		_minimum_preview_damage = applied_result.final_damage
+		_maximum_preview_damage = applied_result.final_damage
 	else:
-		_minimum_preview_damage = mini(_minimum_preview_damage, result.final_damage)
-		_maximum_preview_damage = maxi(_maximum_preview_damage, result.final_damage)
-	if result.critical:
+		_minimum_preview_damage = mini(_minimum_preview_damage, applied_result.final_damage)
+		_maximum_preview_damage = maxi(_maximum_preview_damage, applied_result.final_damage)
+	if applied_result.critical:
 		_critical_preview_count += 1
+	if target.is_defeated:
+		var target_hurtbox := _target_hurtbox(contact.target_instance_id)
+		if target_hurtbox != null:
+			target_hurtbox.set_accepting_hits(false)
 	_update_hit_contact_label()
 
 
@@ -291,7 +384,8 @@ func _update_hit_contact_label() -> void:
 	var display_hit_id := "idle" if _current_hit_id == &"" else String(_current_hit_id)
 	hit_contact_label.text = (
 		"Contacts: %d accepted · %d duplicate blocked · hit_id %s\n"
-		+ "Damage: %d resolved · total %d · range %d-%d · crit %d"
+		+ "Damage: %d resolved · total %d · range %d-%d · crit %d\n"
+		+ "%s"
 	) % [
 		_accepted_contact_count,
 		_duplicate_contact_count,
@@ -301,6 +395,7 @@ func _update_hit_contact_label() -> void:
 		_minimum_preview_damage,
 		_maximum_preview_damage,
 		_critical_preview_count,
+		_combatant_preview_summary(),
 	]
 
 
@@ -316,12 +411,41 @@ func _build_preview_damage_packet() -> DamagePacket:
 	)
 
 
-func _target_defense(contact: HitContact) -> float:
-	if contact.target_instance_id == dummy_a_hurtbox.combatant_instance_id:
-		return DUMMY_A_DEFENSE
-	if contact.target_instance_id == dummy_b_hurtbox.combatant_instance_id:
-		return DUMMY_B_DEFENSE
-	return 0.0
+func _advance_combatant_preview() -> void:
+	for combatant: CombatantModel in _combatants.values():
+		combatant.advance_tick()
+	if not _combatants.is_empty():
+		_update_hit_contact_label()
+
+
+func _target_hurtbox(target_instance_id: int) -> HurtboxComponent:
+	if target_instance_id == dummy_a_hurtbox.combatant_instance_id:
+		return dummy_a_hurtbox
+	if target_instance_id == dummy_b_hurtbox.combatant_instance_id:
+		return dummy_b_hurtbox
+	return null
+
+
+func _combatant_preview_summary() -> String:
+	var normal: CombatantModel = _combatants.get(dummy_a_hurtbox.combatant_instance_id)
+	var elite: CombatantModel = _combatants.get(dummy_b_hurtbox.combatant_instance_id)
+	if normal == null or elite == null:
+		return "Targets: awaiting CMB-005 setup"
+	return (
+		"Targets: Normal HP %d/%d · Poise %.1f/%.1f · %s | "
+		+ "Elite HP %d/%d · Poise %.1f/%.1f · %s"
+	) % [
+		normal.current_health,
+		normal.maximum_health,
+		normal.current_poise,
+		normal.maximum_poise,
+		String(normal.reaction_type),
+		elite.current_health,
+		elite.maximum_health,
+		elite.current_poise,
+		elite.maximum_poise,
+		String(elite.reaction_type),
+	]
 
 
 func _phase_segment_label(title: String, tick_range: Vector2i) -> String:

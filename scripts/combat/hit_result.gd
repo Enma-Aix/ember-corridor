@@ -111,6 +111,32 @@ static func rejected(reason_code: StringName) -> HitResult:
 	)
 
 
+func with_application_outcome(
+	new_poise_damage: float,
+	new_broke_poise: bool,
+	new_reaction_type: StringName,
+	new_knockback: Vector2
+) -> HitResult:
+	if not accepted:
+		return HitResult.rejected(rejection_code)
+	return HitResult.new(
+		true,
+		&"",
+		raw_damage,
+		defense_multiplier,
+		damage_modifier,
+		effective_crit_chance,
+		final_damage,
+		critical,
+		new_poise_damage,
+		new_broke_poise,
+		new_reaction_type,
+		new_knockback,
+		hit_stop_ticks,
+		feedback_strength
+	)
+
+
 func validation_errors() -> PackedStringArray:
 	var errors := PackedStringArray()
 	if accepted:
@@ -124,10 +150,19 @@ func validation_errors() -> PackedStringArray:
 			errors.append("damage_modifier must be at least 0")
 		if effective_crit_chance < 0.0 or effective_crit_chance > 0.6:
 			errors.append("effective_crit_chance must be in [0, 0.6]")
-		if poise_damage < 0.0:
-			errors.append("poise_damage must be at least 0")
+		if is_nan(poise_damage) or is_inf(poise_damage) or poise_damage < 0.0:
+			errors.append("poise_damage must be finite and at least 0")
 		if reaction_type == &"":
 			errors.append("reaction_type must not be empty")
+		if broke_poise and reaction_type != &"poise_break":
+			errors.append("broke_poise requires the poise_break reaction")
+		if (
+			is_nan(knockback.x)
+			or is_inf(knockback.x)
+			or is_nan(knockback.y)
+			or is_inf(knockback.y)
+		):
+			errors.append("knockback components must be finite")
 		if hit_stop_ticks < 0:
 			errors.append("hit_stop_ticks must be at least 0")
 	elif rejection_code == &"":

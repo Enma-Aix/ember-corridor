@@ -12,6 +12,7 @@
 - M1 CMB-002 分支固定为 codex/m1-cmb-002，并叠加在 CMB-001 绿色提交上。
 - M1 CMB-003 分支固定为 codex/m1-cmb-003，并叠加在 CMB-002 绿色提交上。
 - M1 CMB-004 分支固定为 codex/m1-cmb-004，并叠加在 CMB-003 绿色提交上。
+- M1 CMB-005 分支固定为 codex/m1-cmb-005，并叠加在 CMB-004 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -101,4 +102,15 @@
 4. 在纵深边缘、跳跃、闪避无敌和暂停恢复后重复，只有被 CMB-003 接受的接触产生结果。
 5. 运行 tests/test_runner.gd，确认公式、取整、最少伤害、负防御、暴击边界/上限、非法输入和释放用例通过。
 6. 确认 DamagePacket、HitResult 和 DamageResolverModel 不依赖场景、动画、UI、音频、VFX 或 Autoload。
-7. 确认训练目标没有生命、当前韧性、破防或受击状态修改；这些属于 CMB-005。
+7. 确认 DamageResolverModel 本身仍不修改生命、当前韧性、破防或受击状态；当前分支只在其返回后由 CombatantModel 应用结果。
+
+## CMB-005 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[CombatantSandbox] CMB-005 combatant reactions ready`。
+2. 面向两个训练目标按 J / XInput X，确认 HUD 仍显示 2 次结算、总计 143、范围 55–88、暴击 0。
+3. 确认普通目标显示 `HP 212/300 · Poise 12/24`；精英目标显示 `HP 245/300 · Poise 0/12 · poise_break`。
+4. 重复攻击，确认同一 hit_id 不重复应用生命或韧性；新攻击正常应用，失败目标关闭 Hurtbox。
+5. 等待 180 tick，确认未破防目标的韧性开始恢复；破防结束时确认韧性回满并获得 60 tick 韧性减伤。
+6. 运行 tests/test_runner.gd，确认普通、精英、首领策略、破防边界、恢复、失败、事务性和释放用例通过。
+7. 暂停与恢复场景，确认显式 fixed tick 以外的渲染帧不推进生命、韧性、恢复或反应计时器。
+8. 确认 CMB-003 接触层和 CMB-004 公式层保持无状态；只有 CombatantModel.apply_damage 修改目标状态。

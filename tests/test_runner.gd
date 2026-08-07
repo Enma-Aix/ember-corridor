@@ -33,6 +33,10 @@ const HitResultScript := preload("res://scripts/combat/hit_result.gd")
 const DamageResolverModelScript := preload(
 	"res://scripts/combat/damage_resolver_model.gd"
 )
+const CombatReactionProfileScript := preload(
+	"res://scripts/data/combat_reaction_profile.gd"
+)
+const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
 
 var _case_results: Array[Dictionary] = []
 
@@ -79,7 +83,7 @@ func _run() -> void:
 	var area_contact_errors: PackedStringArray = await _test_hitbox_hurtbox_area_contact()
 	_record_case("Area2D contact forwards once across pause-like resume", area_contact_errors)
 	var sandbox_hitbox_errors: PackedStringArray = await _test_project_hitbox_sandbox()
-	_record_case("project sandbox resolves preview damage without applying health", sandbox_hitbox_errors)
+	_record_case("project sandbox applies damage to two combatant strategies once", sandbox_hitbox_errors)
 	_record_case("attack definition validates its damage profile", _test_attack_damage_profile())
 	_record_case("damage packet is an immutable validated snapshot", _test_damage_packet_snapshot())
 	_record_case("damage formula handles baseline, rounding, and minimum", _test_damage_formula_baseline())
@@ -87,6 +91,14 @@ func _run() -> void:
 	_record_case("critical chance uses exact boundaries and a 60 percent cap", _test_damage_critical_boundaries())
 	_record_case("damage modifiers and rejected results are explicit", _test_damage_modifiers_and_rejections())
 	_record_case("damage resolution is deterministic, stateless, and releasable", _test_damage_determinism_and_lifecycle())
+	_record_case("normal elite and boss reaction profiles are registered and valid", _test_combat_reaction_profiles())
+	_record_case("normal combatants react while applying health and poise", _test_normal_combatant_reaction())
+	_record_case("elite combatants preserve action until poise breaks", _test_elite_combatant_reaction())
+	_record_case("boss combatants break only from a tag or zero poise", _test_boss_combatant_reaction())
+	_record_case("break recovery and protection honor exact tick boundaries", _test_break_recovery_and_protection())
+	_record_case("poise regeneration starts after exactly 180 ticks", _test_poise_recovery_boundary())
+	_record_case("defeat and healing clamp state and emit once", _test_combatant_defeat_and_healing())
+	_record_case("combatant application is transactional deterministic and releasable", _test_combatant_determinism_and_lifecycle())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -1025,8 +1037,8 @@ func _test_project_attack_visualization() -> PackedStringArray:
 	var registry: DataRegistryService = DataRegistryScript.new()
 	var registry_errors := registry.reload_definitions("res://data")
 	errors.append_array(registry_errors)
-	if registry.definition_count() != 2:
-		errors.append("DataRegistry did not index character and attack Resources")
+	if registry.definition_count() != 5:
+		errors.append("DataRegistry did not index character, attack, and three reaction profiles")
 	if registry.get_definition(&"attack.dev.a1_placeholder") != attack:
 		errors.append("DataRegistry did not return the project attack Resource")
 	registry.free()
@@ -1444,13 +1456,52 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 		or not contact_label.text.contains("total 143")
 		or not contact_label.text.contains("range 55-88")
 		or not contact_label.text.contains("crit 0")
+		or not contact_label.text.contains("Normal HP 212/300")
+		or not contact_label.text.contains("Elite HP 245/300")
+		or not contact_label.text.contains("Poise 0.0/12.0 · poise_break")
 	):
 		errors.append(
-			"accepted sandbox contacts did not resolve the 88 + 55 damage preview: %s"
+			"sandbox did not resolve and apply the 88 + 55 multi-strategy hit: %s"
 			% contact_label.text.replace("\n", " | ")
 		)
 	if hitbox != null and hitbox.contact_enabled:
 		errors.append("project hitbox remained enabled after the active phase")
+	for _finish_tick: int in range(10):
+		await physics_frame
+	for _attack_index: int in range(5):
+		Input.action_press(&"attack")
+		await physics_frame
+		Input.action_release(&"attack")
+		for _attack_tick: int in range(24):
+			await physics_frame
+	if (
+		contact_label == null
+		or not contact_label.text.contains("Contacts: 10 accepted")
+		or not contact_label.text.contains("Damage: 10 resolved")
+		or not contact_label.text.contains("Normal HP 0/300")
+		or not contact_label.text.contains("Elite HP 0/300")
+		or not contact_label.text.contains("defeated")
+	):
+		errors.append("repeated sandbox attacks did not reach stable terminal states")
+	if (
+		dummy_a != null
+		and dummy_b != null
+		and (dummy_a.is_accepting_hits or dummy_b.is_accepting_hits)
+	):
+		errors.append("defeated sandbox targets kept accepting hurtbox contacts")
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	for _attack_tick: int in range(24):
+		await physics_frame
+	if (
+		contact_label != null
+		and (
+			not contact_label.text.contains("Contacts: 10 accepted")
+			or not contact_label.text.contains("Damage: 10 resolved")
+		)
+	):
+		errors.append("defeated targets received another accepted or applied hit")
 	sandbox.free()
 	return errors
 
@@ -1750,6 +1801,380 @@ func _test_damage_determinism_and_lifecycle() -> PackedStringArray:
 		or weak_result.get_ref() != null
 	):
 		errors.append("released damage formula objects remained alive")
+	return errors
+
+
+func _load_reaction_profile(strategy: StringName) -> CombatReactionProfile:
+	var path := ""
+	match strategy:
+		&"normal":
+			path = "res://data/combat/reaction_profiles/normal.tres"
+		&"elite":
+			path = "res://data/combat/reaction_profiles/elite.tres"
+		&"boss":
+			path = "res://data/combat/reaction_profiles/boss.tres"
+	if path.is_empty():
+		return null
+	return ResourceLoader.load(path) as CombatReactionProfile
+
+
+func _make_combatant(
+	profile: CombatReactionProfile,
+	new_instance_id: int,
+	new_maximum_health: int = 500,
+	new_maximum_poise: float = 24.0,
+	new_defense: float = 25.0
+) -> CombatantModel:
+	var combatant: CombatantModel = CombatantModelScript.new()
+	combatant.configure(
+		new_instance_id,
+		&"enemy",
+		new_maximum_health,
+		new_maximum_poise,
+		new_defense,
+		profile
+	)
+	return combatant
+
+
+func _test_combat_reaction_profiles() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var expected := {
+		&"normal": &"combat.reaction.normal",
+		&"elite": &"combat.reaction.elite",
+		&"boss": &"combat.reaction.boss",
+	}
+	for strategy: StringName in expected:
+		var profile := _load_reaction_profile(strategy)
+		if profile == null:
+			errors.append("%s reaction profile did not load" % String(strategy))
+			continue
+		errors.append_array(profile.validation_errors())
+		if (
+			profile.definition_kind() != &"combat_reaction_profile"
+			or profile.definition_id != expected[strategy]
+			or StringName(profile.strategy) != strategy
+		):
+			errors.append("%s reaction profile identity is incorrect" % String(strategy))
+	var boss := _load_reaction_profile(&"boss")
+	if boss == null or not boss.forced_break_tags.has(&"reaction.boss_break"):
+		errors.append("boss profile does not declare its explicit break tag")
+
+	var invalid := _load_reaction_profile(&"normal").duplicate(true) as CombatReactionProfile
+	invalid.strategy = "unsupported"
+	invalid.hit_reaction_ticks = 0
+	invalid.break_duration_ticks = 0
+	invalid.post_break_poise_damage_multiplier = 1.1
+	invalid.forced_break_tags = [&"", &"reaction.repeat", &"reaction.repeat"]
+	if invalid.validation_errors().size() < 5:
+		errors.append("reaction profile did not reject its invalid boundaries")
+
+	var registry: DataRegistryService = DataRegistryScript.new()
+	errors.append_array(registry.reload_definitions("res://data"))
+	if registry.definition_count() != 5:
+		errors.append("DataRegistry did not index all five project definitions")
+	for definition_id: StringName in expected.values():
+		if not registry.has_definition(definition_id):
+			errors.append("DataRegistry is missing %s" % String(definition_id))
+	registry.free()
+	return errors
+
+
+func _test_normal_combatant_reaction() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var normal := _make_combatant(_load_reaction_profile(&"normal"), 4001, 300, 24.0, 25.0)
+	errors.append_array(normal.validation_errors())
+	var health_events: Array[Vector2i] = []
+	normal.health_changed.connect(
+		func(previous_health: int, current_health: int) -> void:
+			health_events.append(Vector2i(previous_health, current_health))
+	)
+	var packet := _make_damage_packet()
+	var resolved := DamageResolverModelScript.new().resolve(packet, normal.defense)
+	var applied := normal.apply_damage(packet, resolved)
+	if (
+		not applied.accepted
+		or normal.current_health != 212
+		or not is_equal_approx(normal.current_poise, 12.0)
+		or applied.reaction_type != CombatantModel.REACTION_HIT_STUN
+		or applied.broke_poise
+		or applied.knockback != Vector2(16.0, 0.0)
+	):
+		errors.append("normal strategy did not apply an immediate hit reaction")
+	if health_events != [Vector2i(300, 212)]:
+		errors.append("normal health change signal did not contain the exact transition")
+	if normal.poise_recovery_delay_ticks_remaining != 180:
+		errors.append("poise damage did not start the documented 180-tick delay")
+	for _tick: int in range(11):
+		normal.advance_tick()
+	if normal.reaction_type != CombatantModel.REACTION_HIT_STUN or normal.reaction_ticks_remaining != 1:
+		errors.append("normal hit reaction ended before its configured boundary")
+	normal.advance_tick()
+	if normal.reaction_type != CombatantModel.REACTION_NONE or normal.reaction_ticks_remaining != 0:
+		errors.append("normal hit reaction did not end on its configured tick")
+	errors.append_array(applied.validation_errors())
+	return errors
+
+
+func _test_elite_combatant_reaction() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elite := _make_combatant(_load_reaction_profile(&"elite"), 4002, 400, 24.0, 25.0)
+	var packet := _make_damage_packet()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var first := elite.apply_damage(packet, resolver.resolve(packet, elite.defense))
+	if (
+		elite.current_health != 312
+		or not is_equal_approx(elite.current_poise, 12.0)
+		or first.reaction_type != CombatantModel.REACTION_NONE
+		or first.knockback != Vector2.ZERO
+		or first.broke_poise
+	):
+		errors.append("elite reacted before its poise was depleted")
+	var break_events: Array[int] = []
+	elite.poise_broken.connect(
+		func(duration_ticks: int) -> void:
+			break_events.append(duration_ticks)
+	)
+	var second := elite.apply_damage(packet, resolver.resolve(packet, elite.defense))
+	if (
+		elite.current_health != 224
+		or not elite.is_broken
+		or not is_zero_approx(elite.current_poise)
+		or not second.broke_poise
+		or second.reaction_type != CombatantModel.REACTION_POISE_BREAK
+		or second.knockback != Vector2(32.0, 0.0)
+		or elite.reaction_ticks_remaining != 90
+	):
+		errors.append("elite did not enter its configured break after zero poise")
+	if break_events != [90]:
+		errors.append("elite break signal was not emitted exactly once with 90 ticks")
+	return errors
+
+
+func _test_boss_combatant_reaction() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var boss := _make_combatant(_load_reaction_profile(&"boss"), 4003, 600, 36.0, 0.0)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var ordinary_packet := _make_damage_packet()
+	var ordinary := boss.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, boss.defense)
+	)
+	if (
+		ordinary.reaction_type != CombatantModel.REACTION_NONE
+		or ordinary.broke_poise
+		or not is_equal_approx(boss.current_poise, 24.0)
+	):
+		errors.append("ordinary hit interrupted a boss before a break condition")
+
+	var special_attack := _make_test_attack()
+	special_attack.hit_tags.append(&"reaction.boss_break")
+	var special_packet := _make_damage_packet(special_attack)
+	var special := boss.apply_damage(
+		special_packet,
+		resolver.resolve(special_packet, boss.defense)
+	)
+	if (
+		not special.broke_poise
+		or special.reaction_type != CombatantModel.REACTION_POISE_BREAK
+		or not boss.is_broken
+		or boss.reaction_ticks_remaining != 60
+		or not is_zero_approx(boss.current_poise)
+	):
+		errors.append("declared boss-break tag did not force the configured short break")
+
+	var depleted_boss := _make_combatant(
+		_load_reaction_profile(&"boss"), 4004, 600, 24.0, 0.0
+	)
+	depleted_boss.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, depleted_boss.defense)
+	)
+	var depletion_break := depleted_boss.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, depleted_boss.defense)
+	)
+	if not depletion_break.broke_poise or not depleted_boss.is_broken:
+		errors.append("zero poise did not break a boss without the special tag")
+	return errors
+
+
+func _test_break_recovery_and_protection() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elite := _make_combatant(_load_reaction_profile(&"elite"), 4005, 1000, 12.0, 0.0)
+	var packet := _make_damage_packet()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var broken := elite.apply_damage(packet, resolver.resolve(packet, elite.defense))
+	if not broken.broke_poise or elite.reaction_ticks_remaining != 90:
+		errors.append("break fixture did not start at 90 ticks")
+	for _tick: int in range(89):
+		elite.advance_tick()
+	if not elite.is_broken or elite.reaction_ticks_remaining != 1:
+		errors.append("break ended before the last configured tick")
+	elite.advance_tick()
+	if (
+		elite.is_broken
+		or elite.reaction_type != CombatantModel.REACTION_NONE
+		or not is_equal_approx(elite.current_poise, 12.0)
+		or elite.post_break_protection_ticks_remaining != 60
+	):
+		errors.append("break did not refill poise and start 60 protection ticks")
+
+	var protected_hit := elite.apply_damage(packet, resolver.resolve(packet, elite.defense))
+	if (
+		not is_equal_approx(protected_hit.poise_damage, 6.0)
+		or not is_equal_approx(elite.current_poise, 6.0)
+		or protected_hit.broke_poise
+	):
+		errors.append("post-break protection did not halve elite poise damage")
+	for _tick: int in range(59):
+		elite.advance_tick()
+	if elite.post_break_protection_ticks_remaining != 1:
+		errors.append("post-break protection ended one tick early")
+	elite.advance_tick()
+	if elite.post_break_protection_ticks_remaining != 0:
+		errors.append("post-break protection did not end on tick 60")
+	errors.append_array(protected_hit.validation_errors())
+	return errors
+
+
+func _test_poise_recovery_boundary() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var normal := _make_combatant(_load_reaction_profile(&"normal"), 4006, 1000, 36.0, 0.0)
+	var packet := _make_damage_packet()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	normal.apply_damage(packet, resolver.resolve(packet, normal.defense))
+	for _paused_frame: int in range(240):
+		var ignored_delta := 1.0 / 30.0 if _paused_frame % 2 == 0 else 1.0 / 144.0
+		if ignored_delta <= 0.0:
+			errors.append("pause fixture produced an invalid delta")
+	if (
+		normal.poise_recovery_delay_ticks_remaining != 180
+		or not is_equal_approx(normal.current_poise, 24.0)
+	):
+		errors.append("poise changed without an explicit fixed-tick advance")
+	for _tick: int in range(179):
+		normal.advance_tick()
+	if (
+		normal.poise_recovery_delay_ticks_remaining != 1
+		or not is_equal_approx(normal.current_poise, 24.0)
+	):
+		errors.append("poise regeneration began before three seconds")
+	normal.advance_tick()
+	if (
+		normal.poise_recovery_delay_ticks_remaining != 0
+		or not is_equal_approx(normal.current_poise, 25.0)
+	):
+		errors.append("poise regeneration did not begin on tick 180")
+	for _tick: int in range(11):
+		normal.advance_tick()
+	if not is_equal_approx(normal.current_poise, normal.maximum_poise):
+		errors.append("poise recovery did not clamp at the configured maximum")
+	return errors
+
+
+func _test_combatant_defeat_and_healing() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var combatant := _make_combatant(_load_reaction_profile(&"normal"), 4007, 88, 24.0, 25.0)
+	var defeat_events: Array[int] = []
+	combatant.defeated.connect(func() -> void: defeat_events.append(1))
+	var packet := _make_damage_packet()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var applied := combatant.apply_damage(packet, resolver.resolve(packet, combatant.defense))
+	if (
+		not applied.accepted
+		or combatant.current_health != 0
+		or not combatant.is_defeated
+		or combatant.can_receive_hit()
+		or applied.reaction_type != CombatantModel.REACTION_DEFEATED
+		or not is_zero_approx(applied.poise_damage)
+		or applied.broke_poise
+	):
+		errors.append("lethal damage did not enter the terminal defeated state")
+	var rejected := combatant.apply_damage(packet, resolver.resolve(packet, combatant.defense))
+	if (
+		rejected.accepted
+		or rejected.rejection_code != CombatantModel.REJECTION_TARGET_DEFEATED
+		or defeat_events.size() != 1
+		or combatant.heal(100) != 0
+	):
+		errors.append("defeated combatant accepted another hit, heal, or duplicate signal")
+	if not applied.validation_errors().is_empty() or not rejected.validation_errors().is_empty():
+		errors.append("defeat outcomes did not produce valid HitResult objects")
+
+	var heal_target := _make_combatant(_load_reaction_profile(&"normal"), 4008, 100, 24.0, 25.0)
+	heal_target.apply_damage(packet, resolver.resolve(packet, heal_target.defense))
+	if heal_target.current_health != 12 or heal_target.heal(100) != 88:
+		errors.append("healing did not return the exact clamped restored amount")
+	if heal_target.current_health != 100 or heal_target.heal(0) != 0:
+		errors.append("healing did not clamp at maximum health")
+	return errors
+
+
+func _test_combatant_determinism_and_lifecycle() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source_profile := _load_reaction_profile(&"normal").duplicate(true) as CombatReactionProfile
+	var combatant := _make_combatant(source_profile, 4009, 500, 24.0, 25.0)
+	source_profile.react_on_health_hit = false
+	source_profile.hit_reaction_ticks = 0
+	var packet := _make_damage_packet()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var snapshot_outcome := combatant.apply_damage(
+		packet,
+		resolver.resolve(packet, combatant.defense)
+	)
+	if snapshot_outcome.reaction_type != CombatantModel.REACTION_HIT_STUN:
+		errors.append("combatant reaction profile changed after its source was mutated")
+
+	var previous_instance_id := combatant.instance_id
+	var previous_health := combatant.current_health
+	var invalid_profile := _load_reaction_profile(&"elite").duplicate(true) as CombatReactionProfile
+	invalid_profile.strategy = "invalid"
+	var invalid_configuration := combatant.configure(
+		0, &"neutral", 0, NAN, INF, invalid_profile
+	)
+	if invalid_configuration.size() < 6:
+		errors.append("invalid combatant configuration did not report its boundaries")
+	if combatant.instance_id != previous_instance_id or combatant.current_health != previous_health:
+		errors.append("invalid combatant configuration partially changed live state")
+
+	var mismatched := resolver.resolve(packet, combatant.defense).with_application_outcome(
+		5.0, false, CombatantModel.REACTION_NONE, Vector2.ZERO
+	)
+	var mismatched_rejection := combatant.apply_damage(packet, mismatched)
+	if (
+		mismatched_rejection.accepted
+		or mismatched_rejection.rejection_code != CombatantModel.REJECTION_INVALID_RESULT
+		or combatant.current_health != previous_health
+	):
+		errors.append("mismatched packet/result mutated combatant state")
+
+	var model_a := _make_combatant(_load_reaction_profile(&"normal"), 4010, 2000, 24.0, 25.0)
+	var model_b := _make_combatant(_load_reaction_profile(&"normal"), 4011, 2000, 24.0, 25.0)
+	for _hit: int in range(2):
+		model_a.apply_damage(packet, resolver.resolve(packet, model_a.defense))
+		model_b.apply_damage(packet, resolver.resolve(packet, model_b.defense))
+	for _tick: int in range(240):
+		model_a.advance_tick()
+		model_b.advance_tick()
+		if (
+			model_a.current_health != model_b.current_health
+			or not is_equal_approx(model_a.current_poise, model_b.current_poise)
+			or model_a.reaction_type != model_b.reaction_type
+			or model_a.reaction_ticks_remaining != model_b.reaction_ticks_remaining
+			or (
+				model_a.post_break_protection_ticks_remaining
+				!= model_b.post_break_protection_ticks_remaining
+			)
+		):
+			errors.append("identical fixed-tick combatants diverged")
+			break
+	var weak_a: WeakRef = weakref(model_a)
+	var weak_b: WeakRef = weakref(model_b)
+	model_a = null
+	model_b = null
+	if weak_a.get_ref() != null or weak_b.get_ref() != null:
+		errors.append("released combatant models remained alive")
 	return errors
 
 

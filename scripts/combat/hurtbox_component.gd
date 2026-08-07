@@ -141,11 +141,11 @@ func _apply_collision_profile() -> void:
 
 
 func _set_detection_enabled(enabled: bool) -> void:
-	monitoring = enabled
-	monitorable = enabled
+	set_deferred("monitoring", enabled)
+	set_deferred("monitorable", enabled)
 	var collision_shape := get_node_or_null("CollisionShape2D") as CollisionShape2D
 	if collision_shape != null:
-		collision_shape.disabled = not enabled
+		collision_shape.set_deferred("disabled", not enabled)
 	var debug_shape := get_node_or_null("DebugShape") as Polygon2D
 	if debug_shape != null:
 		debug_shape.visible = enabled and OS.is_debug_build()
