@@ -5,6 +5,7 @@
 - main 只通过 Pull Request 更新。
 - 每个任务使用独立分支，并在提交与 PR 中标明 Backlog ID。
 - M0 分支固定为 codex/m0-foundation。
+- M1 MOV-001 分支固定为 codex/m1-mov-001，并叠加在 M0 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -31,3 +32,12 @@
 - 存档实现、联网、账号、PVP、排行榜或云服务。
 - 广告、抽卡、付费宝箱、每日任务、体力和高级货币。
 - 第三方 Godot 插件。
+
+## MOV-001 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 使用 WASD 分别测试四方向与四个对角方向。
+3. 确认纵深速度显示为 288 px/s，横向显示为 320 px/s。
+4. 纯 W/S 输入不改变朝向，A/D 输入稳定改变朝向。
+5. 持续向四面边界移动，确认玩家无法穿过 WorldStatic。
+6. Windows Debug EXE 启动后重复键鼠检查；实体 XInput 手柄检查记录为人工验收。

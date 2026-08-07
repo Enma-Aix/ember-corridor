@@ -3,6 +3,9 @@ extends SceneTree
 const BaseDefinitionScript := preload("res://scripts/data/base_definition.gd")
 const DataRegistryScript := preload("res://scripts/core/data_registry.gd")
 const SettingsServiceScript := preload("res://scripts/core/settings_service.gd")
+const GroundMovementModelScript := preload(
+	"res://scripts/actors/ground_movement_model.gd"
+)
 
 var _case_results: Array[Dictionary] = []
 
@@ -15,6 +18,10 @@ func _run() -> void:
 	_record_case("version is pinned to Godot 4.7.1", _test_version_pin())
 	_record_case("required input actions have keyboard and gamepad events", _test_input_actions())
 	_record_case("input device switching reacts to keyboard, mouse, and gamepad events", _test_input_device_switching())
+	_record_case("ground movement uses horizontal and depth speeds", _test_ground_movement_speeds())
+	_record_case("ground movement normalizes boundary input", _test_ground_movement_boundaries())
+	_record_case("ground movement rejects invalid configuration", _test_ground_movement_invalid_configuration())
+	_record_case("ground movement facing ignores vertical input and stick jitter", _test_ground_movement_facing())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -35,7 +42,7 @@ func _run() -> void:
 				print("  - %s" % message)
 	_write_reports(failure_count)
 	print(
-		"M0 TEST SUMMARY: %d passed, %d failed"
+		"PROJECT TEST SUMMARY: %d passed, %d failed"
 		% [_case_results.size() - failure_count, failure_count]
 	)
 	quit(0 if failure_count == 0 else 1)
@@ -137,6 +144,73 @@ func _test_input_device_switching() -> PackedStringArray:
 		errors.append("keyboard/mouse label did not match the active device")
 
 	settings.free()
+	return errors
+
+
+func _test_ground_movement_speeds() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var movement: GroundMovementModel = GroundMovementModelScript.new()
+	errors.append_array(movement.configure(320.0, 0.9))
+	var horizontal := movement.velocity_for_input(Vector2.RIGHT)
+	var depth := movement.velocity_for_input(Vector2.DOWN)
+	var stopped := movement.velocity_for_input(Vector2.ZERO)
+	if not is_equal_approx(horizontal.x, 320.0) or not is_zero_approx(horizontal.y):
+		errors.append("horizontal movement did not use 320 px/s")
+	if not is_zero_approx(depth.x) or not is_equal_approx(depth.y, 288.0):
+		errors.append("depth movement did not use the 0.9 speed ratio")
+	if not stopped.is_zero_approx():
+		errors.append("zero input produced movement")
+	return errors
+
+
+func _test_ground_movement_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var movement: GroundMovementModel = GroundMovementModelScript.new()
+	var diagonal := movement.velocity_for_input(Vector2(1.0, 1.0))
+	var expected_x := 320.0 / sqrt(2.0)
+	var expected_y := 288.0 / sqrt(2.0)
+	if not is_equal_approx(diagonal.x, expected_x):
+		errors.append("diagonal horizontal component was not normalized")
+	if not is_equal_approx(diagonal.y, expected_y):
+		errors.append("diagonal depth component was not normalized")
+	var saturated := movement.velocity_for_input(Vector2(4.0, 0.0))
+	if not is_equal_approx(saturated.x, 320.0):
+		errors.append("out-of-range input was not clamped to unit length")
+	return errors
+
+
+func _test_ground_movement_invalid_configuration() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var movement: GroundMovementModel = GroundMovementModelScript.new()
+	var invalid_speed := movement.configure(0.0, 0.9)
+	if invalid_speed.is_empty():
+		errors.append("zero horizontal speed was accepted")
+	var invalid_low_ratio := movement.configure(320.0, 0.0)
+	if invalid_low_ratio.is_empty():
+		errors.append("zero depth speed ratio was accepted")
+	var invalid_high_ratio := movement.configure(320.0, 1.1)
+	if invalid_high_ratio.is_empty():
+		errors.append("depth speed ratio above one was accepted")
+	if not is_equal_approx(movement.horizontal_speed, 320.0):
+		errors.append("invalid configuration changed horizontal speed")
+	if not is_equal_approx(movement.depth_speed_ratio, 0.9):
+		errors.append("invalid configuration changed depth speed ratio")
+	return errors
+
+
+func _test_ground_movement_facing() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var movement: GroundMovementModel = GroundMovementModelScript.new()
+	if movement.update_facing(0.0) != GroundMovementModel.FACING_RIGHT:
+		errors.append("zero horizontal input changed the initial facing")
+	if movement.update_facing(-1.0) != GroundMovementModel.FACING_LEFT:
+		errors.append("left input did not face left")
+	if movement.update_facing(0.0) != GroundMovementModel.FACING_LEFT:
+		errors.append("vertical-only input did not preserve left facing")
+	if movement.update_facing(0.005) != GroundMovementModel.FACING_LEFT:
+		errors.append("sub-threshold stick jitter changed facing")
+	if movement.update_facing(1.0) != GroundMovementModel.FACING_RIGHT:
+		errors.append("right input did not face right")
 	return errors
 
 
@@ -275,7 +349,7 @@ func _write_junit_report(failure_count: int) -> void:
 	var lines := PackedStringArray()
 	lines.append('<?xml version="1.0" encoding="UTF-8"?>')
 	lines.append(
-		'<testsuite name="m0-foundation" tests="%d" failures="%d">'
+		'<testsuite name="ember-corridor-regression" tests="%d" failures="%d">'
 		% [_case_results.size(), failure_count]
 	)
 	for result: Dictionary in _case_results:
@@ -311,7 +385,7 @@ func _write_json_report(failure_count: int) -> void:
 			}
 		)
 	var report_data := {
-		"suite": "m0-foundation",
+		"suite": "ember-corridor-regression",
 		"tests": _case_results.size(),
 		"failures": failure_count,
 		"cases": cases,
