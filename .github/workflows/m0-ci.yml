@@ -65,6 +65,8 @@ jobs:
             build/test-results/project-boot.txt
           grep -Fq "[HitboxSandbox] CMB-003 hit detection ready" \
             build/test-results/project-boot.txt
+          grep -Fq "[DamageSandbox] CMB-004 formula ready" \
+            build/test-results/project-boot.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
             exit 1
           fi
@@ -96,6 +98,8 @@ jobs:
           grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
             build/test-results/packaged-smoke.txt
           grep -Fq "[HitboxSandbox] CMB-003 hit detection ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[DamageSandbox] CMB-004 formula ready" \
             build/test-results/packaged-smoke.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/packaged-smoke.txt; then
             exit 1
@@ -190,7 +194,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 42 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 49 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -251,6 +255,13 @@ jobs:
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not instantiate the CMB-003 hit detection"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DamageSandbox] CMB-004 formula ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-004 damage formula"
           }
           if (Select-String `
             -Path build/test-results/windows/project-boot.txt `
@@ -334,6 +345,9 @@ jobs:
           }
           if ($combinedLog -notmatch "\[HitboxSandbox\] CMB-003 hit detection ready") {
             throw "Exported Windows game did not instantiate the CMB-003 hit detection"
+          }
+          if ($combinedLog -notmatch "\[DamageSandbox\] CMB-004 formula ready") {
+            throw "Exported Windows game did not instantiate the CMB-004 damage formula"
           }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Exported Windows game logged a Godot runtime error"
