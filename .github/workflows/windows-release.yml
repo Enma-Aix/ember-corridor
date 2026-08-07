@@ -53,11 +53,17 @@ jobs:
           if ($null -eq $downloadedGodot) {
             throw "Godot 4.7.1 Windows executable was not found"
           }
-          Copy-Item $downloadedGodot.FullName (Join-Path $env:RUNNER_TEMP "godot.exe")
+          $godot = Join-Path $env:RUNNER_TEMP "godot.exe"
+          Copy-Item $downloadedGodot.FullName $godot
           Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP
-          & (Join-Path $env:RUNNER_TEMP "godot.exe") --version
-          if ($LASTEXITCODE -ne 0) {
-            throw "Godot version check failed with code $LASTEXITCODE"
+          $versionOutput = & $godot --version 2>&1
+          $versionExitCode = $LASTEXITCODE
+          $versionOutput
+          if ($null -ne $versionExitCode -and $versionExitCode -ne 0) {
+            throw "Godot version check failed with code $versionExitCode"
+          }
+          if (-not ($versionOutput -match "^4\.7\.1\.stable")) {
+            throw "Downloaded Windows Godot version is not 4.7.1 Stable"
           }
 
       - name: Install official Godot export templates
