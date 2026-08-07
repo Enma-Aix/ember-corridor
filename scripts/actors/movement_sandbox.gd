@@ -6,6 +6,9 @@ const StateMachineModelScript := preload(
 const AttackTimelineModelScript := preload(
 	"res://scripts/combat/attack_timeline_model.gd"
 )
+const HitResolverModelScript := preload(
+	"res://scripts/combat/hit_resolver_model.gd"
+)
 const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
 
 @onready var player: PlayerGroundMovementController = %PlayerRoot
@@ -20,10 +23,24 @@ const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
 @onready var recovery_label: Label = %RecoveryLabel
 @onready var timeline_status_label: Label = %TimelineStatusLabel
 @onready var cancel_windows_label: Label = %CancelWindowsLabel
+@onready var hit_contact_label: Label = %HitContactLabel
+@onready var player_hurtbox: HurtboxComponent = (
+	player.get_node("Hurtbox") as HurtboxComponent
+)
+@onready var player_hitbox: HitboxComponent = (
+	player.get_node("HitboxContainer/DevA1Hitbox") as HitboxComponent
+)
+@onready var dummy_a_hurtbox: HurtboxComponent = %DummyAHurtbox
+@onready var dummy_b_hurtbox: HurtboxComponent = %DummyBHurtbox
 
 var elevation_component: ElevationComponent
 var attack_definition: AttackDefinition
 var attack_timeline: AttackTimelineModel = AttackTimelineModelScript.new()
+var hit_resolver: HitResolverModel = HitResolverModelScript.new()
+var _attack_sequence := 0
+var _current_hit_id: StringName = &""
+var _accepted_contact_count := 0
+var _duplicate_contact_count := 0
 
 
 func _ready() -> void:
@@ -35,15 +52,22 @@ func _ready() -> void:
 	GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")
 	_verify_state_machine_core()
 	_configure_attack_timeline_preview()
+	_configure_hit_detection_preview()
 
 
 func _physics_process(_delta: float) -> void:
+	_sync_player_hurtbox()
 	if Input.is_action_just_pressed(&"attack") and not attack_timeline.is_running:
 		var start_errors := attack_timeline.start(attack_definition)
 		for message: String in start_errors:
 			push_error("[CMB-002] %s" % message)
+		if start_errors.is_empty():
+			_start_attack_hitbox()
 	if attack_timeline.is_running:
 		attack_timeline.advance_tick()
+		_sync_attack_hitbox()
+	elif player_hitbox.is_active:
+		player_hitbox.deactivate()
 	_update_attack_timeline_preview()
 
 
@@ -150,6 +174,70 @@ func _configure_attack_timeline_preview() -> void:
 	cancel_windows_label.text = "Cancel: %s" % " · ".join(cancel_summaries)
 	_update_attack_timeline_preview()
 	GameLog.info(&"AttackTimelineSandbox", "CMB-002 timeline ready")
+
+
+func _configure_hit_detection_preview() -> void:
+	player_hurtbox.bind_resolver(hit_resolver)
+	dummy_a_hurtbox.bind_resolver(hit_resolver)
+	dummy_b_hurtbox.bind_resolver(hit_resolver)
+	hit_resolver.hit_accepted.connect(_on_hit_accepted)
+	hit_resolver.hit_rejected.connect(_on_hit_rejected)
+	_sync_player_hurtbox()
+	_update_hit_contact_label()
+	GameLog.info(&"HitboxSandbox", "CMB-003 hit detection ready")
+
+
+func _start_attack_hitbox() -> void:
+	_attack_sequence += 1
+	_current_hit_id = StringName(
+		"%d:%s:%d"
+		% [player.get_instance_id(), String(attack_definition.definition_id), _attack_sequence]
+	)
+	var hitbox_errors := player_hitbox.activate(
+		attack_definition,
+		_current_hit_id,
+		player.get_instance_id(),
+		&"player",
+		player.facing_sign(),
+		elevation_component.elevation()
+	)
+	for message: String in hitbox_errors:
+		push_error("[CMB-003] %s" % message)
+	if not hitbox_errors.is_empty():
+		attack_timeline.reset()
+
+
+func _sync_attack_hitbox() -> void:
+	if not player_hitbox.is_active:
+		return
+	player_hitbox.set_facing_sign(player.facing_sign())
+	player_hitbox.set_action_tick(attack_timeline.action_tick)
+	player_hitbox.set_contact_enabled(attack_timeline.is_hitbox_active())
+
+
+func _sync_player_hurtbox() -> void:
+	var height_range := elevation_component.hit_height_range()
+	player_hurtbox.set_hit_height_range(height_range.x, height_range.y)
+	player_hurtbox.set_invulnerable(player.is_dodge_invulnerable())
+
+
+func _on_hit_accepted(_contact: HitContact) -> void:
+	_accepted_contact_count += 1
+	_update_hit_contact_label()
+
+
+func _on_hit_rejected(_contact: HitContact, reason_code: StringName) -> void:
+	if reason_code == HitResolverModel.REJECTION_DUPLICATE_HIT:
+		_duplicate_contact_count += 1
+	_update_hit_contact_label()
+
+
+func _update_hit_contact_label() -> void:
+	var display_hit_id := "idle" if _current_hit_id == &"" else String(_current_hit_id)
+	hit_contact_label.text = (
+		"Contacts: %d accepted · %d duplicate blocked · hit_id %s"
+		% [_accepted_contact_count, _duplicate_contact_count, display_hit_id]
+	)
 
 
 func _phase_segment_label(title: String, tick_range: Vector2i) -> String:

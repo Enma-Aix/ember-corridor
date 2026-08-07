@@ -10,6 +10,7 @@
 - M1 MOV-003 分支固定为 codex/m1-mov-003，并叠加在 MOV-002 绿色提交上。
 - M1 CMB-001 分支固定为 codex/m1-cmb-001，并叠加在 MOV-003 绿色提交上。
 - M1 CMB-002 分支固定为 codex/m1-cmb-002，并叠加在 CMB-001 绿色提交上。
+- M1 CMB-003 分支固定为 codex/m1-cmb-003，并叠加在 CMB-002 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -80,3 +81,13 @@
 4. 确认 tick 15–20 显示 `action.dodge`，窗口外不显示取消目标。
 5. 运行中连续按 attack，确认时间线不被重启；完成后可重新启动。
 6. 确认 Release 构建隐藏时间线 Debug 面板，且既有移动、跳跃、闪避不受影响。
+
+## CMB-003 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[HitboxSandbox] CMB-003 hit detection ready`。
+2. Debug 构建中确认蓝色 Hurtbox 可见，橙色 Hitbox 只在 A1 的 tick 7–9 可见。
+3. 面向右侧两个训练目标按 J / XInput X，确认每个目标对同一 hit_id 只计数一次。
+4. 动作完成后再次攻击，确认新 hit_id 可重新接触两个目标。
+5. 移到目标另一侧测试左右镜像，并在纵深边缘、跳跃和闪避无敌期间重复测试。
+6. 暂停恢复不重复计数；Release 构建隐藏碰撞图形和接触调试 HUD。
+7. 确认本任务没有生命、伤害、韧性或受击状态修改。

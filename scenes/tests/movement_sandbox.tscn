@@ -1,13 +1,17 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/actors/movement_sandbox.gd" id="1_sandbox"]
 [ext_resource type="PackedScene" path="res://scenes/actors/player.tscn" id="2_player"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="3_hurtbox"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horizontal"]
 size = Vector2(1152, 24)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vertical"]
 size = Vector2(24, 544)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_dummy_hurtbox"]
+size = Vector2(22, 48)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0.055, 0.063, 0.085, 0.92)
@@ -94,6 +98,52 @@ y_sort_enabled = true
 [node name="PlayerRoot" parent="Actors" instance=ExtResource("2_player")]
 unique_name_in_owner = true
 position = Vector2(640, 430)
+
+[node name="Targets" type="Node2D" parent="Actors"]
+
+[node name="DummyA" type="Node2D" parent="Actors/Targets"]
+position = Vector2(700, 430)
+
+[node name="Body" type="Polygon2D" parent="Actors/Targets/DummyA"]
+polygon = PackedVector2Array(-11, -48, 11, -48, 15, -2, 9, 10, -9, 10, -15, -2)
+color = Color(0.39, 0.43, 0.52, 1)
+
+[node name="DummyAHurtbox" type="Area2D" parent="Actors/Targets/DummyA"]
+unique_name_in_owner = true
+collision_layer = 64
+collision_mask = 8
+script = ExtResource("3_hurtbox")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Actors/Targets/DummyA/DummyAHurtbox"]
+position = Vector2(0, -22)
+shape = SubResource("RectangleShape2D_dummy_hurtbox")
+
+[node name="DebugShape" type="Polygon2D" parent="Actors/Targets/DummyA/DummyAHurtbox"]
+position = Vector2(0, -22)
+polygon = PackedVector2Array(-11, -24, 11, -24, 11, 24, -11, 24)
+color = Color(0.18, 0.7, 1, 0.22)
+
+[node name="DummyB" type="Node2D" parent="Actors/Targets"]
+position = Vector2(724, 430)
+
+[node name="Body" type="Polygon2D" parent="Actors/Targets/DummyB"]
+polygon = PackedVector2Array(-11, -44, 11, -44, 15, -2, 9, 10, -9, 10, -15, -2)
+color = Color(0.49, 0.38, 0.54, 1)
+
+[node name="DummyBHurtbox" type="Area2D" parent="Actors/Targets/DummyB"]
+unique_name_in_owner = true
+collision_layer = 64
+collision_mask = 8
+script = ExtResource("3_hurtbox")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Actors/Targets/DummyB/DummyBHurtbox"]
+position = Vector2(0, -22)
+shape = SubResource("RectangleShape2D_dummy_hurtbox")
+
+[node name="DebugShape" type="Polygon2D" parent="Actors/Targets/DummyB/DummyBHurtbox"]
+position = Vector2(0, -22)
+polygon = PackedVector2Array(-11, -24, 11, -24, 11, 24, -11, 24)
+color = Color(0.18, 0.7, 1, 0.22)
 
 [node name="Hud" type="CanvasLayer" parent="."]
 
@@ -210,3 +260,9 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.82, 0.94, 1)
 text = "Cancel: tick 15-20 → action.dodge"
+
+[node name="HitContactLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.9, 1, 1)
+text = "Contacts: 0 accepted · hit_id idle"
