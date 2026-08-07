@@ -161,7 +161,7 @@ offset_top = 62.0
 offset_right = 1040.0
 offset_bottom = 92.0
 theme_override_colors/font_color = Color(0.7, 0.74, 0.82, 1)
-text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：攻击时间线预览"
+text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：浮空攻击预览"
 
 [node name="DebugPanel" type="PanelContainer" parent="Hud"]
 unique_name_in_owner = true
@@ -205,7 +205,7 @@ theme_override_constants/separation = 5
 [node name="TimelineTitle" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.98, 0.72, 0.37, 1)
-text = "CMB-002 · attack.dev.a1_placeholder"
+text = "CMB-006 · attack.dev.launcher_placeholder"
 
 [node name="TimelineBar" type="HBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
 layout_mode = 2

@@ -36,6 +36,10 @@ const DamageResolverModelScript := preload(
 const CombatReactionProfileScript := preload(
 	"res://scripts/data/combat_reaction_profile.gd"
 )
+const CombatLaunchProfileScript := preload(
+	"res://scripts/data/combat_launch_profile.gd"
+)
+const JuggleModelScript := preload("res://scripts/combat/juggle_model.gd")
 const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
 
 var _case_results: Array[Dictionary] = []
@@ -57,6 +61,7 @@ func _run() -> void:
 	_record_case("elevation lands once and remains stable", _test_elevation_landing())
 	_record_case("elevation rejects invalid configuration and delta", _test_elevation_invalid_configuration())
 	_record_case("elevation height ranges support boundary queries", _test_elevation_height_ranges())
+	_record_case("elevation accepts combat launches and forced landing", _test_elevation_combat_launch())
 	_record_case("elevation component separates visuals from ground coordinates", _test_elevation_component_separation())
 	_record_case("dodge lasts 24 ticks and travels configured distance", _test_dodge_duration_and_distance())
 	_record_case("dodge invulnerability is active on ticks 4 through 13", _test_dodge_invulnerability_ticks())
@@ -92,6 +97,7 @@ func _run() -> void:
 	_record_case("damage modifiers and rejected results are explicit", _test_damage_modifiers_and_rejections())
 	_record_case("damage resolution is deterministic, stateless, and releasable", _test_damage_determinism_and_lifecycle())
 	_record_case("normal elite and boss reaction profiles are registered and valid", _test_combat_reaction_profiles())
+	_record_case("launch and ground-pursuit profiles are registered and valid", _test_combat_launch_profiles())
 	_record_case("normal combatants react while applying health and poise", _test_normal_combatant_reaction())
 	_record_case("elite combatants preserve action until poise breaks", _test_elite_combatant_reaction())
 	_record_case("boss combatants break only from a tag or zero poise", _test_boss_combatant_reaction())
@@ -99,6 +105,11 @@ func _run() -> void:
 	_record_case("poise regeneration starts after exactly 180 ticks", _test_poise_recovery_boundary())
 	_record_case("defeat and healing clamp state and emit once", _test_combatant_defeat_and_healing())
 	_record_case("combatant application is transactional deterministic and releasable", _test_combatant_determinism_and_lifecycle())
+	_record_case("normal targets launch and gain juggle resistance", _test_normal_juggle_progression())
+	_record_case("continuous airborne control forces landing at tick 210", _test_forced_landing_boundary())
+	_record_case("knockdown allows one pursuit within exactly 30 ticks", _test_knockdown_ground_pursuit())
+	_record_case("elite boss break and defeat preserve control immunity", _test_juggle_immunity_and_interrupts())
+	_record_case("juggle state is fixed-tick deterministic and releasable", _test_juggle_determinism_and_lifecycle())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -384,6 +395,42 @@ func _test_elevation_height_ranges() -> PackedStringArray:
 		errors.append("inclusive hit-height boundary did not overlap")
 	if elevation.overlaps_height_range(elevated_range.y + 8.0, elevated_range.y + 16.0):
 		errors.append("separated hit-height ranges incorrectly overlapped")
+	return errors
+
+
+func _test_elevation_combat_launch() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elevation: ElevationModel = ElevationModelScript.new()
+	errors.append_array(elevation.configure(720.0, 1800.0, 0.0, 56.0))
+	if not elevation.launch(600.0) or elevation.grounded:
+		errors.append("valid combat launch did not leave the ground")
+	if not is_equal_approx(elevation.vertical_velocity, 600.0):
+		errors.append("combat launch did not apply its exact upward velocity")
+	elevation.advance(1.0 / 60.0, 2.0)
+	if (
+		not is_equal_approx(elevation.vertical_velocity, 540.0)
+		or not is_equal_approx(elevation.elevation, 9.0)
+	):
+		errors.append("gravity multiplier did not produce deterministic elevation")
+	var before_elevation := elevation.elevation
+	var before_velocity := elevation.vertical_velocity
+	elevation.advance(1.0 / 60.0, 0.0)
+	if (
+		not is_equal_approx(elevation.elevation, before_elevation)
+		or not is_equal_approx(elevation.vertical_velocity, before_velocity)
+	):
+		errors.append("invalid gravity multiplier partially changed elevation")
+	if elevation.launch(NAN):
+		errors.append("non-finite combat launch was accepted")
+	if not elevation.force_land():
+		errors.append("forced landing did not report an airborne transition")
+	if (
+		not elevation.grounded
+		or not is_zero_approx(elevation.elevation)
+		or not is_zero_approx(elevation.vertical_velocity)
+		or elevation.force_land()
+	):
+		errors.append("forced landing did not clamp or remain idempotent")
 	return errors
 
 
@@ -1037,8 +1084,8 @@ func _test_project_attack_visualization() -> PackedStringArray:
 	var registry: DataRegistryService = DataRegistryScript.new()
 	var registry_errors := registry.reload_definitions("res://data")
 	errors.append_array(registry_errors)
-	if registry.definition_count() != 5:
-		errors.append("DataRegistry did not index character, attack, and three reaction profiles")
+	if registry.definition_count() != 8:
+		errors.append("DataRegistry did not index all eight project definitions")
 	if registry.get_definition(&"attack.dev.a1_placeholder") != attack:
 		errors.append("DataRegistry did not return the project attack Resource")
 	registry.free()
@@ -1420,6 +1467,9 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 	var dummy_b := sandbox.get_node_or_null(
 		"Actors/Targets/DummyB/DummyBHurtbox"
 	) as HurtboxComponent
+	var dummy_a_body := sandbox.get_node_or_null(
+		"Actors/Targets/DummyA/Body"
+	) as Node2D
 	var contact_label := sandbox.get_node_or_null(
 		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/HitContactLabel"
 	) as Label
@@ -1457,6 +1507,7 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 		or not contact_label.text.contains("range 55-88")
 		or not contact_label.text.contains("crit 0")
 		or not contact_label.text.contains("Normal HP 212/300")
+		or not contact_label.text.contains("Poise 12.0/24.0 · airborne")
 		or not contact_label.text.contains("Elite HP 245/300")
 		or not contact_label.text.contains("Poise 0.0/12.0 · poise_break")
 	):
@@ -1464,6 +1515,13 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 			"sandbox did not resolve and apply the 88 + 55 multi-strategy hit: %s"
 			% contact_label.text.replace("\n", " | ")
 		)
+	if (
+		dummy_a == null
+		or dummy_a_body == null
+		or dummy_a.min_hit_height <= 0.0
+		or dummy_a_body.position.y >= 0.0
+	):
+		errors.append("CMB-006 sandbox did not separate airborne height from ground position")
 	if hitbox != null and hitbox.contact_enabled:
 		errors.append("project hitbox remained enabled after the active phase")
 	for _finish_tick: int in range(10):
@@ -1818,6 +1876,44 @@ func _load_reaction_profile(strategy: StringName) -> CombatReactionProfile:
 	return ResourceLoader.load(path) as CombatReactionProfile
 
 
+func _load_launch_profile(profile_name: StringName) -> CombatLaunchProfile:
+	var path := ""
+	match profile_name:
+		&"launcher":
+			path = "res://data/combat/launch_profiles/dev_launcher.tres"
+		&"ground_pursuit":
+			path = "res://data/combat/launch_profiles/dev_ground_pursuit.tres"
+	if path.is_empty():
+		return null
+	return ResourceLoader.load(path) as CombatLaunchProfile
+
+
+func _make_control_attack(
+	launch_profile_id: StringName,
+	new_poise_damage: float = 0.0,
+	new_flat_damage: float = 0.0
+) -> AttackDefinition:
+	var attack := _make_test_attack()
+	attack.definition_id = &"attack.test.control"
+	attack.display_name_key = &"attack.test.control.name"
+	attack.damage_coefficient = 0.0
+	attack.flat_damage = new_flat_damage
+	attack.poise_damage = new_poise_damage
+	attack.hit_tags = [&"damage.physical", &"control.test"]
+	attack.launch_profile = launch_profile_id
+	return attack
+
+
+func _make_control_packet(
+	launch_profile_id: StringName,
+	new_poise_damage: float = 0.0,
+	new_flat_damage: float = 0.0
+) -> DamagePacket:
+	return _make_damage_packet(
+		_make_control_attack(launch_profile_id, new_poise_damage, new_flat_damage)
+	)
+
+
 func _make_combatant(
 	profile: CombatReactionProfile,
 	new_instance_id: int,
@@ -1871,9 +1967,56 @@ func _test_combat_reaction_profiles() -> PackedStringArray:
 
 	var registry: DataRegistryService = DataRegistryScript.new()
 	errors.append_array(registry.reload_definitions("res://data"))
-	if registry.definition_count() != 5:
-		errors.append("DataRegistry did not index all five project definitions")
+	if registry.definition_count() != 8:
+		errors.append("DataRegistry did not index all eight project definitions")
 	for definition_id: StringName in expected.values():
+		if not registry.has_definition(definition_id):
+			errors.append("DataRegistry is missing %s" % String(definition_id))
+	registry.free()
+	return errors
+
+
+func _test_combat_launch_profiles() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var launcher := _load_launch_profile(&"launcher")
+	var pursuit := _load_launch_profile(&"ground_pursuit")
+	if launcher == null or pursuit == null:
+		errors.append("project launch profiles did not load")
+		return errors
+	errors.append_array(launcher.validation_errors())
+	errors.append_array(pursuit.validation_errors())
+	if (
+		launcher.definition_kind() != &"combat_launch_profile"
+		or launcher.definition_id != &"combat.launch.dev_launcher"
+		or not is_equal_approx(launcher.upward_velocity, 720.0)
+		or launcher.can_hit_downed
+	):
+		errors.append("launcher profile identity or baseline is incorrect")
+	if (
+		pursuit.definition_id != &"combat.launch.dev_ground_pursuit"
+		or not is_zero_approx(pursuit.upward_velocity)
+		or not pursuit.can_hit_downed
+	):
+		errors.append("ground-pursuit profile identity or baseline is incorrect")
+
+	var invalid: CombatLaunchProfile = CombatLaunchProfileScript.new()
+	invalid.definition_id = &"combat.launch.invalid"
+	invalid.display_name_key = &"combat.launch.invalid.name"
+	invalid.upward_velocity = NAN
+	invalid.can_hit_downed = false
+	if invalid.validation_errors().is_empty():
+		errors.append("launch profile accepted a non-finite velocity")
+	invalid.upward_velocity = 0.0
+	if invalid.validation_errors().is_empty():
+		errors.append("launch profile accepted an inert configuration")
+
+	var registry: DataRegistryService = DataRegistryScript.new()
+	errors.append_array(registry.reload_definitions("res://data"))
+	for definition_id: StringName in [
+		&"combat.launch.dev_launcher",
+		&"combat.launch.dev_ground_pursuit",
+		&"attack.dev.launcher_placeholder",
+	]:
 		if not registry.has_definition(definition_id):
 			errors.append("DataRegistry is missing %s" % String(definition_id))
 	registry.free()
@@ -2175,6 +2318,378 @@ func _test_combatant_determinism_and_lifecycle() -> PackedStringArray:
 	model_b = null
 	if weak_a.get_ref() != null or weak_b.get_ref() != null:
 		errors.append("released combatant models remained alive")
+	return errors
+
+
+func _test_normal_juggle_progression() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source_profile := _load_reaction_profile(&"normal").duplicate(true) as CombatReactionProfile
+	var normal := _make_combatant(source_profile, 5001, 1000, 1000.0, 0.0)
+	source_profile.can_be_launched = false
+	source_profile.juggle_gravity = 1.0
+	var launcher := _load_launch_profile(&"launcher")
+	var packet := _make_control_packet(launcher.definition_id)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var launch_events: Array[Vector2] = []
+	normal.launched.connect(
+		func(upward_velocity: float, resistance: float) -> void:
+			launch_events.append(Vector2(upward_velocity, resistance))
+	)
+	var first := normal.apply_damage(packet, resolver.resolve(packet, normal.defense), launcher)
+	if (
+		not first.accepted
+		or not normal.is_airborne
+		or normal.reaction_type != CombatantModel.REACTION_AIRBORNE
+		or not is_equal_approx(first.launch_velocity, 720.0)
+		or not is_zero_approx(first.juggle_resistance)
+		or not is_zero_approx(normal.elevation)
+		or not is_equal_approx(normal.vertical_velocity, 720.0)
+	):
+		errors.append("grounded normal target did not enter its baseline launch")
+	normal.advance_tick()
+	if (
+		not is_equal_approx(normal.vertical_velocity, 690.0)
+		or not is_equal_approx(normal.elevation, 11.5)
+		or normal.airborne_control_ticks != 1
+	):
+		errors.append("first airborne fixed tick did not reuse MOV-002 gravity")
+
+	var second := normal.apply_damage(packet, resolver.resolve(packet, normal.defense), launcher)
+	if (
+		not second.accepted
+		or not is_equal_approx(normal.juggle_resistance, 1.0)
+		or not is_equal_approx(second.launch_velocity, 612.0)
+		or not is_equal_approx(second.juggle_resistance, 1.0)
+		or not is_equal_approx(normal.vertical_velocity, 612.0)
+	):
+		errors.append("air hit did not raise resistance and reduce launch by 15 percent")
+
+	var ordinary_packet := _make_control_packet(&"none")
+	var ordinary := normal.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, normal.defense)
+	)
+	if (
+		not ordinary.accepted
+		or ordinary.reaction_type != CombatantModel.REACTION_AIRBORNE
+		or not is_zero_approx(ordinary.launch_velocity)
+		or not is_equal_approx(ordinary.juggle_resistance, 2.0)
+	):
+		errors.append("non-launching air hit did not increase resistance while preserving airborne state")
+	if (
+		launch_events != [Vector2(720.0, 0.0), Vector2(612.0, 1.0)]
+		or not normal.can_be_launched
+	):
+		errors.append("launch signals or reaction-profile snapshot changed unexpectedly")
+	errors.append_array(first.validation_errors())
+	errors.append_array(second.validation_errors())
+	errors.append_array(ordinary.validation_errors())
+	errors.append_array(normal.validation_errors())
+	return errors
+
+
+func _test_forced_landing_boundary() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5002, 1_000_000, 1_000_000.0, 0.0
+	)
+	var launcher := _load_launch_profile(&"launcher")
+	var packet := _make_control_packet(launcher.definition_id)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var forced_events: Array[int] = []
+	var knockdown_events: PackedStringArray = []
+	target.forced_landed.connect(
+		func(control_ticks: int) -> void: forced_events.append(control_ticks)
+	)
+	target.knocked_down.connect(
+		func(duration_ticks: int, forced: bool) -> void:
+			knockdown_events.append("%d:%s" % [duration_ticks, str(forced)])
+	)
+	var initial := target.apply_damage(packet, resolver.resolve(packet, 0.0), launcher)
+	if not initial.accepted or not target.is_airborne:
+		errors.append("forced-landing fixture did not launch")
+		return errors
+	for _tick: int in range(209):
+		var relaunch := target.apply_damage(packet, resolver.resolve(packet, 0.0), launcher)
+		if not relaunch.accepted:
+			errors.append("continuous airborne fixture rejected a relaunch")
+			break
+		target.advance_tick()
+	if (
+		not target.is_airborne
+		or target.airborne_control_ticks != 209
+		or not forced_events.is_empty()
+	):
+		errors.append("continuous airborne control ended before tick 210")
+	var last_relaunch := target.apply_damage(packet, resolver.resolve(packet, 0.0), launcher)
+	if not last_relaunch.accepted:
+		errors.append("last relaunch before forced landing was rejected")
+	target.advance_tick()
+	if (
+		not target.is_knocked_down
+		or target.reaction_type != CombatantModel.REACTION_KNOCKDOWN
+		or target.airborne_control_ticks != 210
+		or target.knockdown_ticks_remaining != 30
+		or not is_zero_approx(target.elevation)
+		or not is_zero_approx(target.vertical_velocity)
+		or forced_events != [210]
+		or knockdown_events != PackedStringArray(["30:true"])
+	):
+		errors.append("tick 210 did not force exactly one deterministic knockdown")
+	errors.append_array(target.validation_errors())
+	return errors
+
+
+func _test_knockdown_ground_pursuit() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5003, 1000, 1000.0, 0.0
+	)
+	var launcher := _load_launch_profile(&"launcher").duplicate(true) as CombatLaunchProfile
+	launcher.upward_velocity = 60.0
+	var launch_packet := _make_control_packet(launcher.definition_id)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	target.apply_damage(launch_packet, resolver.resolve(launch_packet, 0.0), launcher)
+	var landing_tick := 0
+	for tick: int in range(1, 11):
+		target.advance_tick()
+		if target.is_knocked_down:
+			landing_tick = tick
+			break
+	if landing_tick != 3 or target.knockdown_ticks_remaining != 30:
+		errors.append("low launch did not enter a 30-tick knockdown on its natural landing")
+
+	var ordinary_packet := _make_control_packet(&"none")
+	var health_before_block := target.current_health
+	var blocked := target.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, 0.0)
+	)
+	if (
+		blocked.accepted
+		or blocked.rejection_code != CombatantModel.REJECTION_TARGET_KNOCKDOWN_PROTECTED
+		or target.current_health != health_before_block
+	):
+		errors.append("ordinary attack bypassed knockdown protection or partially damaged")
+
+	var pursuit := _load_launch_profile(&"ground_pursuit")
+	var pursuit_packet := _make_control_packet(pursuit.definition_id)
+	var first := target.apply_damage(
+		pursuit_packet,
+		resolver.resolve(pursuit_packet, 0.0),
+		pursuit
+	)
+	var health_after_first := target.current_health
+	var second := target.apply_damage(
+		pursuit_packet,
+		resolver.resolve(pursuit_packet, 0.0),
+		pursuit
+	)
+	if (
+		not first.accepted
+		or not first.ground_pursuit_consumed
+		or first.reaction_type != CombatantModel.REACTION_KNOCKDOWN
+		or target.ground_pursuit_hits_used != 1
+		or second.accepted
+		or second.rejection_code != CombatantModel.REJECTION_GROUND_PURSUIT_LIMIT
+		or target.current_health != health_after_first
+	):
+		errors.append("knockdown window did not enforce exactly one ground pursuit")
+	for _tick: int in range(29):
+		target.advance_tick()
+	if not target.is_knocked_down or target.knockdown_ticks_remaining != 1:
+		errors.append("knockdown recovered before its final tick")
+	target.advance_tick()
+	if (
+		target.is_knocked_down
+		or target.reaction_type != CombatantModel.REACTION_NONE
+		or target.knockdown_ticks_remaining != 0
+		or target.ground_pursuit_hits_used != 0
+		or not is_zero_approx(target.juggle_resistance)
+	):
+		errors.append("knockdown did not recover and reset control state on tick 30")
+	var recovered_hit := target.apply_damage(
+		ordinary_packet,
+		resolver.resolve(ordinary_packet, 0.0)
+	)
+	if not recovered_hit.accepted:
+		errors.append("recovered target remained protected after tick 30")
+
+	var late_target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5004, 1000, 1000.0, 0.0
+	)
+	late_target.apply_damage(launch_packet, resolver.resolve(launch_packet, 0.0), launcher)
+	for _tick: int in range(3 + 29):
+		late_target.advance_tick()
+	var late_pursuit := late_target.apply_damage(
+		pursuit_packet,
+		resolver.resolve(pursuit_packet, 0.0),
+		pursuit
+	)
+	if (
+		not late_target.is_knocked_down
+		or late_target.knockdown_ticks_remaining != 1
+		or not late_pursuit.accepted
+		or not late_pursuit.ground_pursuit_consumed
+	):
+		errors.append("first ground pursuit was not accepted on the last inclusive tick")
+	errors.append_array(first.validation_errors())
+	errors.append_array(second.validation_errors())
+	return errors
+
+
+func _test_juggle_immunity_and_interrupts() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var launcher := _load_launch_profile(&"launcher")
+	var launch_packet := _make_control_packet(launcher.definition_id)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	for fixture: Dictionary in [
+		{"name": "elite", "target": _make_combatant(_load_reaction_profile(&"elite"), 5005, 1000, 1000.0, 0.0)},
+		{"name": "boss", "target": _make_combatant(_load_reaction_profile(&"boss"), 5006, 1000, 1000.0, 0.0)},
+	]:
+		var target: CombatantModel = fixture["target"]
+		var applied := target.apply_damage(
+			launch_packet,
+			resolver.resolve(launch_packet, 0.0),
+			launcher
+		)
+		if (
+			not applied.accepted
+			or target.is_airborne
+			or target.can_be_launched
+			or not is_zero_approx(applied.launch_velocity)
+			or not is_zero_approx(target.elevation)
+		):
+			errors.append("%s target ignored its configured launch immunity" % fixture["name"])
+
+	var break_target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5007, 1000, 12.0, 0.0
+	)
+	break_target.apply_damage(
+		launch_packet,
+		resolver.resolve(launch_packet, 0.0),
+		launcher
+	)
+	var break_packet := _make_control_packet(&"none", 12.0)
+	var broke := break_target.apply_damage(
+		break_packet,
+		resolver.resolve(break_packet, 0.0)
+	)
+	if (
+		not broke.broke_poise
+		or not break_target.is_broken
+		or break_target.is_airborne
+		or not is_zero_approx(break_target.elevation)
+	):
+		errors.append("poise break did not interrupt airborne control")
+
+	var defeat_target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5008, 2, 1000.0, 0.0
+	)
+	defeat_target.apply_damage(
+		launch_packet,
+		resolver.resolve(launch_packet, 0.0),
+		launcher
+	)
+	var lethal_packet := _make_control_packet(&"none", 0.0, 1000.0)
+	var lethal := defeat_target.apply_damage(
+		lethal_packet,
+		resolver.resolve(lethal_packet, 0.0)
+	)
+	if (
+		not lethal.accepted
+		or not defeat_target.is_defeated
+		or defeat_target.is_airborne
+		or defeat_target.is_knocked_down
+		or not is_zero_approx(defeat_target.elevation)
+	):
+		errors.append("defeat did not terminate and clear airborne control")
+
+	var transaction_target := _make_combatant(
+		_load_reaction_profile(&"normal"), 5009, 1000, 1000.0, 0.0
+	)
+	var health_before := transaction_target.current_health
+	var mismatched := transaction_target.apply_damage(
+		launch_packet,
+		resolver.resolve(launch_packet, 0.0),
+		_load_launch_profile(&"ground_pursuit")
+	)
+	if (
+		mismatched.accepted
+		or mismatched.rejection_code != CombatantModel.REJECTION_INVALID_LAUNCH_PROFILE
+		or transaction_target.current_health != health_before
+		or transaction_target.is_airborne
+	):
+		errors.append("mismatched launch profile partially changed combatant state")
+	return errors
+
+
+func _test_juggle_determinism_and_lifecycle() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source_profile := _load_reaction_profile(&"normal").duplicate(true) as CombatReactionProfile
+	var model_a := _make_combatant(source_profile, 5010, 100_000, 100_000.0, 0.0)
+	source_profile.can_be_launched = false
+	source_profile.juggle_gravity = 9999.0
+	var model_b := _make_combatant(
+		_load_reaction_profile(&"normal"), 5011, 100_000, 100_000.0, 0.0
+	)
+	var launcher := _load_launch_profile(&"launcher")
+	var packet := _make_control_packet(launcher.definition_id)
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	model_a.apply_damage(packet, resolver.resolve(packet, 0.0), launcher)
+	model_b.apply_damage(packet, resolver.resolve(packet, 0.0), launcher)
+	for simulated_frame: int in range(240):
+		var ignored_delta := 1.0 / 30.0 if simulated_frame % 2 == 0 else 1.0 / 144.0
+		if ignored_delta <= 0.0:
+			errors.append("juggle pause fixture produced an invalid delta")
+	if (
+		model_a.airborne_control_ticks != 0
+		or not is_zero_approx(model_a.elevation)
+		or not model_a.can_be_launched
+	):
+		errors.append("render frames or source mutation changed the fixed-tick snapshot")
+
+	for tick: int in range(240):
+		if tick % 12 == 0:
+			var outcome_a := model_a.apply_damage(
+				packet,
+				resolver.resolve(packet, 0.0),
+				launcher
+			)
+			var outcome_b := model_b.apply_damage(
+				packet,
+				resolver.resolve(packet, 0.0),
+				launcher
+			)
+			if (
+				outcome_a.accepted != outcome_b.accepted
+				or outcome_a.rejection_code != outcome_b.rejection_code
+				or not is_equal_approx(outcome_a.launch_velocity, outcome_b.launch_velocity)
+			):
+				errors.append("identical juggle hits produced different outcomes")
+				break
+		model_a.advance_tick()
+		model_b.advance_tick()
+		if (
+			model_a.reaction_type != model_b.reaction_type
+			or model_a.current_health != model_b.current_health
+			or not is_equal_approx(model_a.elevation, model_b.elevation)
+			or not is_equal_approx(model_a.vertical_velocity, model_b.vertical_velocity)
+			or not is_equal_approx(model_a.juggle_resistance, model_b.juggle_resistance)
+			or model_a.airborne_control_ticks != model_b.airborne_control_ticks
+			or model_a.knockdown_ticks_remaining != model_b.knockdown_ticks_remaining
+			or model_a.ground_pursuit_hits_used != model_b.ground_pursuit_hits_used
+		):
+			errors.append("identical fixed-tick juggle models diverged")
+			break
+	if not model_a.validation_errors().is_empty() or not model_b.validation_errors().is_empty():
+		errors.append("deterministic juggle fixtures ended with invalid state")
+	var weak_a: WeakRef = weakref(model_a)
+	var weak_b: WeakRef = weakref(model_b)
+	model_a = null
+	model_b = null
+	if weak_a.get_ref() != null or weak_b.get_ref() != null:
+		errors.append("released juggle combatants remained alive")
 	return errors
 
 

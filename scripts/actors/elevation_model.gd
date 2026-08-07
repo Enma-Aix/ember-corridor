@@ -43,14 +43,33 @@ func request_jump() -> bool:
 	return true
 
 
-func advance(delta: float) -> bool:
-	if not is_finite(delta) or delta <= 0.0:
+func launch(upward_velocity: float) -> bool:
+	if not is_finite(upward_velocity) or upward_velocity <= 0.0:
+		return false
+	grounded = false
+	vertical_velocity = upward_velocity
+	return true
+
+
+func force_land() -> bool:
+	var was_airborne := not grounded
+	_snap_to_ground()
+	return was_airborne
+
+
+func advance(delta: float, gravity_multiplier: float = 1.0) -> bool:
+	if (
+		not is_finite(delta)
+		or delta <= 0.0
+		or not is_finite(gravity_multiplier)
+		or gravity_multiplier <= 0.0
+	):
 		return false
 	if grounded:
 		_snap_to_ground()
 		return false
 
-	vertical_velocity -= gravity * delta
+	vertical_velocity -= gravity * gravity_multiplier * delta
 	elevation += vertical_velocity * delta
 	if elevation <= LANDING_EPSILON and vertical_velocity <= 0.0:
 		_snap_to_ground()

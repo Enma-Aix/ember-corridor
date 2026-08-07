@@ -2,11 +2,16 @@ class_name CombatantModel
 extends RefCounted
 
 const HitResultScript := preload("res://scripts/combat/hit_result.gd")
+const JuggleModelScript := preload("res://scripts/combat/juggle_model.gd")
 
 signal health_changed(previous_health: int, current_health: int)
 signal poise_changed(previous_poise: float, current_poise: float)
 signal reaction_changed(previous_reaction: StringName, current_reaction: StringName)
 signal poise_broken(duration_ticks: int)
+signal launched(upward_velocity: float, juggle_resistance: float)
+signal forced_landed(airborne_control_ticks: int)
+signal knocked_down(duration_ticks: int, forced: bool)
+signal knockdown_recovered
 signal defeated
 
 const TICKS_PER_SECOND := 60
@@ -16,12 +21,17 @@ const POST_BREAK_PROTECTION_TICKS := 1 * TICKS_PER_SECOND
 const REACTION_NONE := &"none"
 const REACTION_HIT_STUN := &"hit_stun"
 const REACTION_POISE_BREAK := &"poise_break"
+const REACTION_AIRBORNE := &"airborne"
+const REACTION_KNOCKDOWN := &"knockdown"
 const REACTION_DEFEATED := &"defeated"
 
 const REJECTION_NOT_CONFIGURED := &"target_not_configured"
 const REJECTION_TARGET_DEFEATED := &"target_defeated"
 const REJECTION_INVALID_PACKET := &"invalid_packet"
 const REJECTION_INVALID_RESULT := &"invalid_hit_result"
+const REJECTION_INVALID_LAUNCH_PROFILE := &"invalid_launch_profile"
+const REJECTION_TARGET_KNOCKDOWN_PROTECTED := &"target_knockdown_protected"
+const REJECTION_GROUND_PURSUIT_LIMIT := &"ground_pursuit_limit_reached"
 
 var instance_id: int:
 	get:
@@ -62,6 +72,33 @@ var poise_recovery_delay_ticks_remaining: int:
 var post_break_protection_ticks_remaining: int:
 	get:
 		return _post_break_protection_ticks_remaining
+var elevation: float:
+	get:
+		return _juggle_model.elevation if _juggle_model != null else 0.0
+var vertical_velocity: float:
+	get:
+		return _juggle_model.vertical_velocity if _juggle_model != null else 0.0
+var juggle_resistance: float:
+	get:
+		return _juggle_model.juggle_resistance if _juggle_model != null else 0.0
+var airborne_control_ticks: int:
+	get:
+		return _juggle_model.airborne_control_ticks if _juggle_model != null else 0
+var knockdown_ticks_remaining: int:
+	get:
+		return _juggle_model.knockdown_ticks_remaining if _juggle_model != null else 0
+var ground_pursuit_hits_used: int:
+	get:
+		return _juggle_model.ground_pursuit_hits_used if _juggle_model != null else 0
+var can_be_launched: bool:
+	get:
+		return _juggle_model.can_be_launched if _juggle_model != null else false
+var is_airborne: bool:
+	get:
+		return _juggle_model != null and _juggle_model.is_airborne
+var is_knocked_down: bool:
+	get:
+		return _juggle_model != null and _juggle_model.is_knocked_down
 var is_broken: bool:
 	get:
 		return _reaction_type == REACTION_POISE_BREAK
@@ -77,6 +114,7 @@ var _maximum_poise := 0.0
 var _current_poise := 0.0
 var _defense := 0.0
 var _profile: CombatReactionProfile
+var _juggle_model: JuggleModel
 var _reaction_type: StringName = REACTION_NONE
 var _reaction_ticks_remaining := 0
 var _poise_recovery_delay_ticks_remaining := 0
@@ -111,6 +149,13 @@ func configure(
 	if not errors.is_empty():
 		return errors
 
+	var profile_snapshot := new_profile.duplicate(true) as CombatReactionProfile
+	var juggle_candidate: JuggleModel = JuggleModelScript.new()
+	for message: String in juggle_candidate.configure(profile_snapshot):
+		errors.append("juggle model: %s" % message)
+	if not errors.is_empty():
+		return errors
+
 	_instance_id = new_instance_id
 	_faction_id = new_faction_id
 	_maximum_health = new_maximum_health
@@ -118,7 +163,8 @@ func configure(
 	_maximum_poise = new_maximum_poise
 	_current_poise = new_maximum_poise
 	_defense = new_defense
-	_profile = new_profile.duplicate(true) as CombatReactionProfile
+	_profile = profile_snapshot
+	_juggle_model = juggle_candidate
 	_reaction_type = REACTION_NONE
 	_reaction_ticks_remaining = 0
 	_poise_recovery_delay_ticks_remaining = 0
@@ -131,7 +177,22 @@ func can_receive_hit() -> bool:
 	return _configured and not is_defeated and _current_health > 0
 
 
-func apply_damage(packet: DamagePacket, resolved_result: HitResult) -> HitResult:
+func hit_height_range(minimum_height: float = 0.0, maximum_height: float = 56.0) -> Vector2:
+	if (
+		not _is_finite(minimum_height)
+		or not _is_finite(maximum_height)
+		or minimum_height < 0.0
+		or maximum_height < minimum_height
+	):
+		return Vector2.ZERO
+	return Vector2(elevation + minimum_height, elevation + maximum_height)
+
+
+func apply_damage(
+	packet: DamagePacket,
+	resolved_result: HitResult,
+	launch_profile: CombatLaunchProfile = null
+) -> HitResult:
 	if not _configured:
 		return HitResultScript.rejected(REJECTION_NOT_CONFIGURED)
 	if not can_receive_hit():
@@ -145,6 +206,16 @@ func apply_damage(packet: DamagePacket, resolved_result: HitResult) -> HitResult
 		or not is_equal_approx(resolved_result.poise_damage, packet.poise_damage)
 	):
 		return HitResultScript.rejected(REJECTION_INVALID_RESULT)
+	if not _launch_profile_matches_packet(packet, launch_profile):
+		return HitResultScript.rejected(REJECTION_INVALID_LAUNCH_PROFILE)
+
+	var ground_pursuit_consumed := false
+	if is_knocked_down:
+		if launch_profile == null or not launch_profile.can_hit_downed:
+			return HitResultScript.rejected(REJECTION_TARGET_KNOCKDOWN_PROTECTED)
+		if not _juggle_model.can_consume_ground_pursuit():
+			return HitResultScript.rejected(REJECTION_GROUND_PURSUIT_LIMIT)
+		ground_pursuit_consumed = _juggle_model.consume_ground_pursuit()
 
 	_apply_health_damage(resolved_result.final_damage)
 	var applied_poise_damage := 0.0
@@ -162,6 +233,7 @@ func apply_damage(packet: DamagePacket, resolved_result: HitResult) -> HitResult
 
 	var outcome_reaction := _reaction_type
 	var outcome_knockback := Vector2.ZERO
+	var outcome_launch_velocity := 0.0
 	if is_defeated:
 		outcome_reaction = REACTION_DEFEATED
 	elif started_break:
@@ -169,18 +241,43 @@ func apply_damage(packet: DamagePacket, resolved_result: HitResult) -> HitResult
 		outcome_knockback = _directional_knockback(packet.direction, _profile.break_knockback)
 	elif is_broken:
 		outcome_reaction = REACTION_POISE_BREAK
-	elif _profile.react_on_health_hit:
-		_enter_hit_reaction()
-		outcome_reaction = REACTION_HIT_STUN
-		outcome_knockback = _directional_knockback(packet.direction, _profile.hit_knockback)
+	elif ground_pursuit_consumed:
+		_reaction_ticks_remaining = 0
+		_set_reaction(REACTION_KNOCKDOWN)
+		outcome_reaction = REACTION_KNOCKDOWN
 	else:
-		outcome_reaction = REACTION_NONE
+		var was_airborne := _juggle_model.is_airborne
+		if was_airborne:
+			_juggle_model.register_airborne_hit()
+		if launch_profile != null and launch_profile.upward_velocity > 0.0:
+			outcome_launch_velocity = _juggle_model.launch(launch_profile.upward_velocity)
+		if outcome_launch_velocity > 0.0:
+			_reaction_ticks_remaining = 0
+			_set_reaction(REACTION_AIRBORNE)
+			outcome_reaction = REACTION_AIRBORNE
+			launched.emit(outcome_launch_velocity, _juggle_model.juggle_resistance)
+		elif _juggle_model.is_airborne:
+			_reaction_ticks_remaining = 0
+			_set_reaction(REACTION_AIRBORNE)
+			outcome_reaction = REACTION_AIRBORNE
+		elif _profile.react_on_health_hit:
+			_enter_hit_reaction()
+			outcome_reaction = REACTION_HIT_STUN
+			outcome_knockback = _directional_knockback(packet.direction, _profile.hit_knockback)
+		else:
+			outcome_reaction = REACTION_NONE
 
+	var reported_ground_pursuit := (
+		ground_pursuit_consumed and outcome_reaction == REACTION_KNOCKDOWN
+	)
 	return resolved_result.with_application_outcome(
 		applied_poise_damage,
 		started_break,
 		outcome_reaction,
-		outcome_knockback
+		outcome_knockback,
+		outcome_launch_velocity,
+		_juggle_model.juggle_resistance,
+		reported_ground_pursuit
 	)
 
 
@@ -206,7 +303,27 @@ func advance_tick() -> void:
 			_set_reaction(REACTION_NONE)
 		return
 
-	if _reaction_type == REACTION_HIT_STUN:
+	var juggle_transition := _juggle_model.advance_tick()
+	match juggle_transition:
+		JuggleModel.TRANSITION_LANDED:
+			_enter_knockdown(false)
+		JuggleModel.TRANSITION_FORCED_LANDED:
+			forced_landed.emit(_juggle_model.airborne_control_ticks)
+			_enter_knockdown(true)
+		JuggleModel.TRANSITION_RECOVERED:
+			_reaction_ticks_remaining = 0
+			_set_reaction(REACTION_NONE)
+			knockdown_recovered.emit()
+		_:
+			pass
+
+	if _juggle_model.is_airborne:
+		_reaction_ticks_remaining = 0
+		_set_reaction(REACTION_AIRBORNE)
+	elif _juggle_model.is_knocked_down:
+		_reaction_ticks_remaining = 0
+		_set_reaction(REACTION_KNOCKDOWN)
+	elif _reaction_type == REACTION_HIT_STUN:
 		_reaction_ticks_remaining = maxi(0, _reaction_ticks_remaining - 1)
 		if _reaction_ticks_remaining == 0:
 			_set_reaction(REACTION_NONE)
@@ -247,11 +364,36 @@ func validation_errors() -> PackedStringArray:
 		errors.append("combatant defense is invalid")
 	if _profile == null or not _profile.validation_errors().is_empty():
 		errors.append("combatant reaction profile is invalid")
+	if _juggle_model == null or not _juggle_model.validation_errors().is_empty():
+		errors.append("combatant juggle model is invalid")
 	if is_broken and (_reaction_ticks_remaining < 1 or _current_poise > 0.0):
 		errors.append("broken combatant state is inconsistent")
+	if is_airborne and _reaction_type != REACTION_AIRBORNE:
+		errors.append("airborne combatant reaction is inconsistent")
+	if is_knocked_down and _reaction_type != REACTION_KNOCKDOWN:
+		errors.append("knocked-down combatant reaction is inconsistent")
+	if _reaction_type == REACTION_AIRBORNE and not is_airborne:
+		errors.append("airborne reaction has no airborne control state")
+	if _reaction_type == REACTION_KNOCKDOWN and not is_knocked_down:
+		errors.append("knockdown reaction has no knockdown control state")
 	if is_defeated and _current_health != 0:
 		errors.append("defeated combatant must have zero health")
+	if is_defeated and (is_airborne or is_knocked_down):
+		errors.append("defeated combatant retained airborne control state")
 	return errors
+
+
+func _launch_profile_matches_packet(
+	packet: DamagePacket,
+	launch_profile: CombatLaunchProfile
+) -> bool:
+	if packet.launch_profile == &"none":
+		return launch_profile == null
+	return (
+		launch_profile != null
+		and launch_profile.definition_id == packet.launch_profile
+		and launch_profile.validation_errors().is_empty()
+	)
 
 
 func _apply_health_damage(damage: int) -> void:
@@ -260,6 +402,7 @@ func _apply_health_damage(damage: int) -> void:
 	if _current_health != previous_health:
 		health_changed.emit(previous_health, _current_health)
 	if _current_health == 0:
+		_juggle_model.interrupt_to_ground()
 		_reaction_ticks_remaining = 0
 		_set_reaction(REACTION_DEFEATED)
 		defeated.emit()
@@ -282,11 +425,18 @@ func _enter_hit_reaction() -> void:
 
 
 func _enter_break() -> void:
+	_juggle_model.interrupt_to_ground()
 	_reaction_ticks_remaining = _profile.break_duration_ticks
 	_poise_recovery_delay_ticks_remaining = 0
 	_post_break_protection_ticks_remaining = 0
 	_set_reaction(REACTION_POISE_BREAK)
 	poise_broken.emit(_profile.break_duration_ticks)
+
+
+func _enter_knockdown(forced: bool) -> void:
+	_reaction_ticks_remaining = 0
+	_set_reaction(REACTION_KNOCKDOWN)
+	knocked_down.emit(JuggleModel.KNOCKDOWN_DURATION_TICKS, forced)
 
 
 func _set_current_poise(new_poise: float) -> void:

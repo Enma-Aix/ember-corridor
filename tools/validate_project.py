@@ -88,11 +88,16 @@ REQUIRED_FILES = (
     "scripts/combat/hit_result.gd",
     "scripts/combat/damage_resolver_model.gd",
     "scripts/data/combat_reaction_profile.gd",
+    "scripts/data/combat_launch_profile.gd",
     "scripts/combat/combatant_model.gd",
+    "scripts/combat/juggle_model.gd",
     "data/attacks/dev_a1.tres",
+    "data/attacks/dev_launcher.tres",
     "data/combat/reaction_profiles/normal.tres",
     "data/combat/reaction_profiles/elite.tres",
     "data/combat/reaction_profiles/boss.tres",
+    "data/combat/launch_profiles/dev_launcher.tres",
+    "data/combat/launch_profiles/dev_ground_pursuit.tres",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
@@ -103,6 +108,7 @@ REQUIRED_FILES = (
     "docs/M1-CMB-003-TEST-PLAN.md",
     "docs/M1-CMB-004-TEST-PLAN.md",
     "docs/M1-CMB-005-TEST-PLAN.md",
+    "docs/M1-CMB-006-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -135,6 +141,7 @@ def main() -> int:
     validate_hit_detection_contract(errors)
     validate_damage_formula_contract(errors)
     validate_combatant_contract(errors)
+    validate_juggle_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -708,9 +715,9 @@ def validate_damage_formula_contract(errors: list[str]) -> None:
 
     core_text = "\n".join((packet_text, result_text, resolver_text))
     forbidden_dependencies = re.search(
-        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|"
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|App|"
         r"GameLog|RandomNumberGenerator)\b|\brand[fi]_range\b|\brand[fi]\b|"
-        r"get_node\s*\(|extends\s+(Node|Area2D)",
+        r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
         core_text,
     )
     if forbidden_dependencies:
@@ -829,9 +836,9 @@ def validate_combatant_contract(errors: list[str]) -> None:
             errors.append(f"CMB-005 CombatantModel missing marker: {marker}")
 
     forbidden_dependencies = re.search(
-        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|"
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|App|"
         r"GameLog|RandomNumberGenerator)\b|\brand[fi]_range\b|\brand[fi]\b|"
-        r"get_node\s*\(|extends\s+(Node|Area2D)",
+        r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
         "\n".join((profile_text, combatant_text)),
     )
     if forbidden_dependencies:
@@ -896,7 +903,7 @@ def validate_combatant_contract(errors: list[str]) -> None:
         for marker in (
             'GameLog.info(&"CombatantSandbox", "CMB-005 combatant reactions ready")',
             "CombatantModelScript.new",
-            "target.apply_damage(packet, result)",
+            "target.apply_damage(packet, result, launch_profile)",
             "combatant.advance_tick()",
             "target_hurtbox.set_accepting_hits(false)",
             "Normal HP %d/%d",
@@ -904,6 +911,201 @@ def validate_combatant_contract(errors: list[str]) -> None:
         ):
             if marker not in sandbox_text:
                 errors.append(f"CMB-005 sandbox missing marker: {marker}")
+
+
+def validate_juggle_contract(errors: list[str]) -> None:
+    launch_profile_path = ROOT / "scripts/data/combat_launch_profile.gd"
+    reaction_profile_path = ROOT / "scripts/data/combat_reaction_profile.gd"
+    elevation_path = ROOT / "scripts/actors/elevation_model.gd"
+    juggle_path = ROOT / "scripts/combat/juggle_model.gd"
+    combatant_path = ROOT / "scripts/combat/combatant_model.gd"
+    result_path = ROOT / "scripts/combat/hit_result.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    attack_path = ROOT / "data/attacks/dev_launcher.tres"
+    test_path = ROOT / "tests/test_runner.gd"
+
+    if launch_profile_path.is_file():
+        text = launch_profile_path.read_text(encoding="utf-8")
+        for marker in (
+            "class_name CombatLaunchProfile",
+            "extends BaseDefinition",
+            "var upward_velocity",
+            "var can_hit_downed",
+            'return &"combat_launch_profile"',
+            "func validation_errors",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 launch profile missing marker: {marker}")
+
+    if reaction_profile_path.is_file():
+        text = reaction_profile_path.read_text(encoding="utf-8")
+        for marker in (
+            "var can_be_launched",
+            "var juggle_gravity",
+            "var juggle_resistance_per_air_hit",
+            "var juggle_gravity_multiplier_per_resistance",
+            "var juggle_maximum_gravity_multiplier",
+            "var juggle_launch_reduction_per_resistance",
+            "var juggle_minimum_launch_multiplier",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 reaction profile missing marker: {marker}")
+
+    if elevation_path.is_file():
+        text = elevation_path.read_text(encoding="utf-8")
+        for marker in (
+            "func launch(upward_velocity: float) -> bool",
+            "func force_land() -> bool",
+            "func advance(delta: float, gravity_multiplier: float = 1.0) -> bool",
+            "vertical_velocity -= gravity * gravity_multiplier * delta",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 ElevationModel missing marker: {marker}")
+
+    if juggle_path.is_file():
+        text = juggle_path.read_text(encoding="utf-8")
+        for marker in (
+            "class_name JuggleModel",
+            "extends RefCounted",
+            'preload("res://scripts/actors/elevation_model.gd")',
+            "const MAX_AIRBORNE_CONTROL_TICKS := 210",
+            "const KNOCKDOWN_DURATION_TICKS := 30",
+            "const MAX_GROUND_PURSUIT_HITS := 1",
+            'const STATE_AIRBORNE := &"airborne"',
+            'const STATE_KNOCKDOWN := &"knockdown"',
+            "func register_airborne_hit() -> bool",
+            "func effective_launch_multiplier() -> float",
+            "func effective_gravity_multiplier() -> float",
+            "func consume_ground_pursuit() -> bool",
+            "func advance_tick() -> StringName",
+            "func interrupt_to_ground() -> void",
+            "_airborne_control_ticks >= MAX_AIRBORNE_CONTROL_TICKS",
+            "_knockdown_ticks_remaining = KNOCKDOWN_DURATION_TICKS",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 JuggleModel missing marker: {marker}")
+        forbidden = re.search(
+            r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|App|"
+            r"GameLog|RandomNumberGenerator)\b|\brand[fi]_range\b|\brand[fi]\b|"
+            r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
+            text,
+        )
+        if forbidden:
+            errors.append(
+                "CMB-006 juggle core depends on scene, presentation, or RNG: "
+                f"{forbidden.group(0)}"
+            )
+
+    if combatant_path.is_file():
+        text = combatant_path.read_text(encoding="utf-8")
+        for marker in (
+            'preload("res://scripts/combat/juggle_model.gd")',
+            "signal launched",
+            "signal forced_landed",
+            "signal knocked_down",
+            "signal knockdown_recovered",
+            'const REACTION_AIRBORNE := &"airborne"',
+            'const REACTION_KNOCKDOWN := &"knockdown"',
+            'const REJECTION_INVALID_LAUNCH_PROFILE := &"invalid_launch_profile"',
+            'const REJECTION_TARGET_KNOCKDOWN_PROTECTED := &"target_knockdown_protected"',
+            'const REJECTION_GROUND_PURSUIT_LIMIT := &"ground_pursuit_limit_reached"',
+            "launch_profile: CombatLaunchProfile = null",
+            "func hit_height_range",
+            "func _launch_profile_matches_packet",
+            "_juggle_model.register_airborne_hit()",
+            "_juggle_model.launch(launch_profile.upward_velocity)",
+            "_juggle_model.interrupt_to_ground()",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 CombatantModel missing marker: {marker}")
+
+    if result_path.is_file():
+        text = result_path.read_text(encoding="utf-8")
+        for marker in (
+            "var launch_velocity: float",
+            "var juggle_resistance: float",
+            "var ground_pursuit_consumed: bool",
+            "new_launch_velocity: float = 0.0",
+            "new_juggle_resistance: float = 0.0",
+            "new_ground_pursuit_consumed: bool = false",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 HitResult missing marker: {marker}")
+
+    resource_contracts = {
+        ROOT / "data/combat/launch_profiles/dev_launcher.tres": (
+            'definition_id = &"combat.launch.dev_launcher"',
+            "upward_velocity = 720.0",
+            "can_hit_downed = false",
+        ),
+        ROOT / "data/combat/launch_profiles/dev_ground_pursuit.tres": (
+            'definition_id = &"combat.launch.dev_ground_pursuit"',
+            "upward_velocity = 0.0",
+            "can_hit_downed = true",
+        ),
+        ROOT / "data/combat/reaction_profiles/normal.tres": (
+            "can_be_launched = true",
+            "juggle_gravity = 1800.0",
+            "juggle_resistance_per_air_hit = 1.0",
+            "juggle_gravity_multiplier_per_resistance = 0.25",
+            "juggle_maximum_gravity_multiplier = 2.5",
+            "juggle_launch_reduction_per_resistance = 0.15",
+            "juggle_minimum_launch_multiplier = 0.35",
+        ),
+        ROOT / "data/combat/reaction_profiles/elite.tres": (
+            "can_be_launched = false",
+            "juggle_gravity = 1800.0",
+        ),
+        ROOT / "data/combat/reaction_profiles/boss.tres": (
+            "can_be_launched = false",
+            "juggle_gravity = 1800.0",
+        ),
+    }
+    for path, markers in resource_contracts.items():
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                errors.append(f"CMB-006 Resource {path.name} missing marker: {marker}")
+
+    if attack_path.is_file():
+        text = attack_path.read_text(encoding="utf-8")
+        for marker in (
+            'definition_id = &"attack.dev.launcher_placeholder"',
+            'launch_profile = &"combat.launch.dev_launcher"',
+            "max_hit_height = 160.0",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 launcher attack missing marker: {marker}")
+
+    if sandbox_path.is_file():
+        text = sandbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'GameLog.info(&"JuggleSandbox", "CMB-006 airborne control ready")',
+            'preload("res://data/attacks/dev_launcher.tres")',
+            "func _configure_launch_profiles() -> bool",
+            "target.apply_damage(packet, result, launch_profile)",
+            "combatant.hit_height_range(",
+            "body.position.y = (",
+            "normal.juggle_resistance",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 sandbox missing marker: {marker}")
+
+    if test_path.is_file():
+        text = test_path.read_text(encoding="utf-8")
+        for marker in (
+            "_test_elevation_combat_launch()",
+            "_test_combat_launch_profiles()",
+            "_test_normal_juggle_progression()",
+            "_test_forced_landing_boundary()",
+            "_test_knockdown_ground_pursuit()",
+            "_test_juggle_immunity_and_interrupts()",
+            "_test_juggle_determinism_and_lifecycle()",
+        ):
+            if marker not in text:
+                errors.append(f"CMB-006 tests missing marker: {marker}")
 
 
 def validate_workflow(errors: list[str]) -> None:
@@ -922,12 +1124,12 @@ def validate_workflow(errors: list[str]) -> None:
         "cp licenses/GODOT-ENGINE-LICENSE.md",
         "cp docs/ASSET-LICENSE-REGISTER.csv",
         '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
-        'grep -Fq "[DataRegistry] Loaded 5 definition(s)"',
+        'grep -Fq "[DataRegistry] Loaded 8 definition(s)"',
         "actions/upload-artifact@v4",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 57 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 64 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
@@ -937,6 +1139,7 @@ def validate_workflow(errors: list[str]) -> None:
         'grep -Fq "[HitboxSandbox] CMB-003 hit detection ready"',
         'grep -Fq "[DamageSandbox] CMB-004 formula ready"',
         'grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready"',
+        'grep -Fq "[JuggleSandbox] CMB-006 airborne control ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:
