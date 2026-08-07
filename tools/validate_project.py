@@ -1170,6 +1170,8 @@ def validate_release_contract(errors: list[str]) -> None:
         "contents: write",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
+        '$null -ne $versionExitCode -and $versionExitCode -ne 0',
+        'versionOutput -match "^4\\.7\\.1\\.stable"',
         "windows_debug_x86_64.exe",
         'PROJECT TEST SUMMARY: 64 passed, 0 failed',
         "PASS: loaded and validated 8 definition(s)",
