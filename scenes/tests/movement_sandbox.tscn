@@ -81,23 +81,23 @@ offset_left = 32.0
 offset_top = 24.0
 offset_right = 420.0
 offset_bottom = 60.0
-text = "余烬回廊 · M1 移动与跳跃沙盒"
+text = "余烬回廊 · M1 移动、跳跃与闪避沙盒"
 label_settings = SubResource("LabelSettings_title")
 
 [node name="Instruction" type="Label" parent="Hud"]
 offset_left = 34.0
 offset_top = 62.0
-offset_right = 840.0
+offset_right = 1040.0
 offset_bottom = 92.0
 theme_override_colors/font_color = Color(0.7, 0.74, 0.82, 1)
-text = "WASD / 左摇杆：八方向移动 · K / XInput A：跳跃 · 地面坐标与视觉高度分离"
+text = "WASD / 左摇杆：移动 · K / XInput A：跳跃 · L / XInput B：24 tick 八方向闪避"
 
 [node name="DebugPanel" type="PanelContainer" parent="Hud"]
 unique_name_in_owner = true
 offset_left = 1010.0
 offset_top = 24.0
 offset_right = 1248.0
-offset_bottom = 236.0
+offset_bottom = 346.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="Margin" type="MarginContainer" parent="Hud/DebugPanel"]
@@ -110,4 +110,4 @@ theme_override_constants/margin_bottom = 10
 [node name="MovementLabel" type="Label" parent="Hud/DebugPanel/Margin"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Ground\nMove velocity\nFacing\nElevation\nVertical velocity\nGrounded\nHit height\nLow probe"
+text = "Ground\nMove velocity\nFacing\nElevation\nVertical velocity\nGrounded\nHit height\nLow probe\nDodge\nInvulnerable\nDodge cooldown\nDodge direction"

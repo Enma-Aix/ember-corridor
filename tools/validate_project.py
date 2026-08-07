@@ -75,10 +75,12 @@ REQUIRED_FILES = (
     "scripts/actors/movement_sandbox.gd",
     "scripts/actors/elevation_model.gd",
     "scripts/actors/elevation_component.gd",
+    "scripts/actors/dodge_model.gd",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
     "docs/M1-MOV-002-TEST-PLAN.md",
+    "docs/M1-MOV-003-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -105,9 +107,11 @@ def main() -> int:
     validate_project_settings(errors)
     validate_movement_contract(errors)
     validate_elevation_contract(errors)
+    validate_dodge_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
+    validate_script_uids(errors)
     validate_offline_boundary(errors)
 
     if errors:
@@ -121,7 +125,7 @@ def main() -> int:
     print(f"  - {len(REQUIRED_ACTIONS)} Input actions")
     print(f"  - {len(EXPECTED_LAYERS)} named collision layers")
     print(f"  - {len(EXPECTED_AUTOLOADS)} approved Autoload services")
-    print("  - asset license register and offline boundary")
+    print("  - stable script UIDs, asset license register, and offline boundary")
     return 0
 
 
@@ -268,6 +272,61 @@ def validate_elevation_contract(errors: list[str]) -> None:
             errors.append("MOV-002 sandbox does not emit its readiness marker")
 
 
+def validate_dodge_contract(errors: list[str]) -> None:
+    model_path = ROOT / "scripts/actors/dodge_model.gd"
+    controller_path = ROOT / "scripts/actors/ground_movement_controller.gd"
+    player_scene_path = ROOT / "scenes/actors/player.tscn"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    if not model_path.is_file() or not controller_path.is_file():
+        return
+
+    model_text = model_path.read_text(encoding="utf-8")
+    for marker in (
+        "const TOTAL_TICKS := 24",
+        "const TRAVEL_TICKS := 10",
+        "const INVULNERABLE_START_TICK := 4",
+        "const INVULNERABLE_END_TICK := 13",
+        "const COOLDOWN_TICKS := 45",
+        "const DODGE_DISTANCE := 70.4",
+        "raw_input.limit_length(1.0)",
+    ):
+        if marker not in model_text:
+            errors.append(f"MOV-003 dodge model missing marker: {marker}")
+
+    controller_text = controller_path.read_text(encoding="utf-8")
+    for marker in (
+        'Input.is_action_just_pressed(&"dodge")',
+        "move_and_slide()",
+        "signal dodge_started",
+        "signal dodge_finished",
+        "signal dodge_invulnerability_changed",
+    ):
+        if marker not in controller_text:
+            errors.append(f"MOV-003 controller missing marker: {marker}")
+    forbidden_input_access = re.search(
+        r"\bKEY_[A-Z0-9_]+\b|physical_keycode|Input\.is_key_pressed",
+        controller_text,
+    )
+    if forbidden_input_access:
+        errors.append(
+            "MOV-003 controller bypasses Input actions: "
+            f"{forbidden_input_access.group(0)}"
+        )
+
+    if player_scene_path.is_file():
+        player_scene = player_scene_path.read_text(encoding="utf-8")
+        if "collision_mask = 1" not in player_scene:
+            errors.append(
+                "MOV-003 PlayerBody must collide with WorldStatic only so enemy "
+                "soft collision does not block dodge"
+            )
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if 'GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")' not in sandbox_text:
+            errors.append("MOV-003 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -288,10 +347,11 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 19 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 24 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
+        'grep -Fq "[DodgeSandbox] MOV-003 sandbox ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:
@@ -338,6 +398,29 @@ def validate_asset_registry(errors: list[str]) -> None:
         for field in ("asset_id", "source_url", "author", "license", "project_path"):
             if not (row.get(field) or "").strip():
                 errors.append(f"asset register row {row_index} has empty {field}")
+
+
+def validate_script_uids(errors: list[str]) -> None:
+    discovered: dict[str, Path] = {}
+    for script_path in sorted(ROOT.rglob("*.gd")):
+        relative_path = script_path.relative_to(ROOT)
+        if ".godot" in relative_path.parts or "build" in relative_path.parts:
+            continue
+        uid_path = Path(f"{script_path}.uid")
+        if not uid_path.is_file():
+            errors.append(f"Godot script UID is not tracked: {relative_path}.uid")
+            continue
+        uid = uid_path.read_text(encoding="utf-8").strip()
+        if not re.fullmatch(r"uid://[a-z0-9]+", uid):
+            errors.append(f"invalid Godot script UID in {uid_path.relative_to(ROOT)}")
+            continue
+        if uid in discovered:
+            errors.append(
+                "duplicate Godot script UID in "
+                f"{uid_path.relative_to(ROOT)} and {discovered[uid]}"
+            )
+            continue
+        discovered[uid] = uid_path.relative_to(ROOT)
 
 
 def validate_offline_boundary(errors: list[str]) -> None:

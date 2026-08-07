@@ -7,6 +7,7 @@ const GroundMovementModelScript := preload(
 	"res://scripts/actors/ground_movement_model.gd"
 )
 const ElevationModelScript := preload("res://scripts/actors/elevation_model.gd")
+const DodgeModelScript := preload("res://scripts/actors/dodge_model.gd")
 
 var _case_results: Array[Dictionary] = []
 
@@ -28,6 +29,12 @@ func _run() -> void:
 	_record_case("elevation rejects invalid configuration and delta", _test_elevation_invalid_configuration())
 	_record_case("elevation height ranges support boundary queries", _test_elevation_height_ranges())
 	_record_case("elevation component separates visuals from ground coordinates", _test_elevation_component_separation())
+	_record_case("dodge lasts 24 ticks and travels configured distance", _test_dodge_duration_and_distance())
+	_record_case("dodge invulnerability is active on ticks 4 through 13", _test_dodge_invulnerability_ticks())
+	_record_case("dodge resolves eight directions and facing fallback", _test_dodge_direction_resolution())
+	_record_case("dodge cooldown blocks exactly 45 ticks", _test_dodge_cooldown_boundary())
+	var dodge_wall_errors: PackedStringArray = await _test_dodge_wall_collision()
+	_record_case("dodge cannot cross WorldStatic walls", dodge_wall_errors)
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -354,6 +361,156 @@ func _test_elevation_component_separation() -> PackedStringArray:
 	if not shadow.position.is_equal_approx(shadow_before):
 		errors.append("ground shadow moved with the elevated visual root")
 	player.free()
+	return errors
+
+
+func _test_dodge_duration_and_distance() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var dodge: DodgeModel = DodgeModelScript.new()
+	if not dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT):
+		errors.append("valid dodge start was rejected")
+		return errors
+	var traveled_distance := 0.0
+	var moving_ticks := 0
+	for tick: int in range(1, DodgeModel.TOTAL_TICKS + 1):
+		var displacement := dodge.advance_tick()
+		traveled_distance += displacement.length()
+		if not displacement.is_zero_approx():
+			moving_ticks += 1
+		if tick < DodgeModel.TOTAL_TICKS and not dodge.is_active():
+			errors.append("dodge ended before tick 24")
+			break
+	if dodge.is_active():
+		errors.append("dodge remained active after tick 24")
+	if dodge.action_tick != DodgeModel.TOTAL_TICKS:
+		errors.append("dodge action tick did not stop at 24")
+	if moving_ticks != DodgeModel.TRAVEL_TICKS:
+		errors.append("dodge traveled for %d ticks instead of %d" % [moving_ticks, DodgeModel.TRAVEL_TICKS])
+	if not is_equal_approx(traveled_distance, DodgeModel.DODGE_DISTANCE):
+		errors.append(
+			"dodge traveled %.3f px instead of %.3f px"
+			% [traveled_distance, DodgeModel.DODGE_DISTANCE]
+		)
+	return errors
+
+
+func _test_dodge_invulnerability_ticks() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var dodge: DodgeModel = DodgeModelScript.new()
+	dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT)
+	var invulnerable_ticks: Array[int] = []
+	for tick: int in range(1, DodgeModel.TOTAL_TICKS + 1):
+		dodge.advance_tick()
+		if dodge.is_invulnerable():
+			invulnerable_ticks.append(tick)
+	var expected_ticks: Array[int] = []
+	for tick: int in range(
+		DodgeModel.INVULNERABLE_START_TICK,
+		DodgeModel.INVULNERABLE_END_TICK + 1
+	):
+		expected_ticks.append(tick)
+	if invulnerable_ticks != expected_ticks:
+		errors.append(
+			"invulnerability ticks were %s, expected %s"
+			% [str(invulnerable_ticks), str(expected_ticks)]
+		)
+	return errors
+
+
+func _test_dodge_direction_resolution() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var diagonal: DodgeModel = DodgeModelScript.new()
+	if not diagonal.try_start(Vector2(1.0, -1.0), GroundMovementModel.FACING_LEFT):
+		errors.append("diagonal dodge was rejected")
+	elif not diagonal.direction.is_equal_approx(Vector2(1.0, -1.0).normalized()):
+		errors.append("diagonal dodge direction was not normalized")
+
+	var saturated: DodgeModel = DodgeModelScript.new()
+	if not saturated.try_start(Vector2(4.0, 0.0), GroundMovementModel.FACING_LEFT):
+		errors.append("out-of-range dodge input was rejected instead of clamped")
+	elif not saturated.direction.is_equal_approx(Vector2.RIGHT):
+		errors.append("out-of-range dodge input was not clamped to a unit direction")
+
+	var fallback: DodgeModel = DodgeModelScript.new()
+	if not fallback.try_start(Vector2.ZERO, GroundMovementModel.FACING_LEFT):
+		errors.append("zero-input dodge did not use current facing")
+	elif not fallback.direction.is_equal_approx(Vector2.LEFT):
+		errors.append("zero-input dodge did not fall back to left facing")
+
+	var vertical: DodgeModel = DodgeModelScript.new()
+	if not vertical.try_start(Vector2.UP, GroundMovementModel.FACING_RIGHT):
+		errors.append("vertical dodge was rejected")
+	elif not vertical.direction.is_equal_approx(Vector2.UP):
+		errors.append("vertical dodge direction changed")
+
+	var invalid: DodgeModel = DodgeModelScript.new()
+	if invalid.try_start(Vector2.ZERO, 0):
+		errors.append("zero-input dodge accepted an invalid facing sign")
+	return errors
+
+
+func _test_dodge_cooldown_boundary() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var dodge: DodgeModel = DodgeModelScript.new()
+	dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT)
+	for _tick: int in range(DodgeModel.TOTAL_TICKS):
+		dodge.advance_tick()
+	if dodge.cooldown_ticks_remaining != DodgeModel.COOLDOWN_TICKS:
+		errors.append("dodge cooldown did not begin at 45 ticks")
+	if dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT):
+		errors.append("dodge restarted at the beginning of cooldown")
+	for _tick: int in range(DodgeModel.COOLDOWN_TICKS - 1):
+		dodge.advance_tick()
+	if dodge.cooldown_ticks_remaining != 1:
+		errors.append("cooldown boundary did not reach one remaining tick")
+	if dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT):
+		errors.append("dodge restarted with one cooldown tick remaining")
+	dodge.advance_tick()
+	if dodge.cooldown_ticks_remaining != 0:
+		errors.append("cooldown did not end after exactly 45 ticks")
+	if not dodge.try_start(Vector2.RIGHT, GroundMovementModel.FACING_RIGHT):
+		errors.append("dodge could not restart after cooldown ended")
+	return errors
+
+
+func _test_dodge_wall_collision() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not be loaded for wall test")
+		return errors
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	await physics_frame
+	var player := sandbox.get_node("Actors/PlayerRoot") as PlayerGroundMovementController
+	if player == null:
+		errors.append("movement sandbox is missing the player controller")
+		sandbox.free()
+		return errors
+	player.global_position = Vector2(1160.0, 430.0)
+	await physics_frame
+	var start_x := player.global_position.x
+	if not player.try_start_dodge(Vector2.RIGHT):
+		errors.append("wall integration dodge could not start")
+		sandbox.free()
+		return errors
+	var maximum_x := player.global_position.x
+	var saw_invulnerability := false
+	for _tick: int in range(DodgeModel.TOTAL_TICKS + 6):
+		await physics_frame
+		maximum_x = maxf(maximum_x, player.global_position.x)
+		saw_invulnerability = saw_invulnerability or player.is_dodge_invulnerable()
+	if maximum_x <= start_x:
+		errors.append("wall integration dodge produced no movement")
+	if maximum_x > 1188.5:
+		errors.append("dodge crossed the WorldStatic wall boundary")
+	if player.is_dodging():
+		errors.append("wall collision left dodge active beyond 24 ticks")
+	if not saw_invulnerability:
+		errors.append("wall integration dodge never entered invulnerability")
+	sandbox.free()
 	return errors
 
 

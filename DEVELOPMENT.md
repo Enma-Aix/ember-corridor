@@ -7,6 +7,7 @@
 - M0 分支固定为 codex/m0-foundation。
 - M1 MOV-001 分支固定为 codex/m1-mov-001，并叠加在 M0 绿色提交上。
 - M1 MOV-002 分支固定为 codex/m1-mov-002，并叠加在 MOV-001 绿色提交上。
+- M1 MOV-003 分支固定为 codex/m1-mov-003，并叠加在 MOV-002 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -51,3 +52,12 @@
 4. 跳跃同时移动，确认 X/Y 地面运动和 WorldStatic 墙体阻挡继续生效。
 5. 确认调试面板的 elevation 最终稳定回到 0，vertical velocity 回到 0，grounded 为 true。
 6. 确认低位 0 至 24 高度探针在跳高后显示 clear，并在落地后恢复 overlap。
+
+## MOV-003 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 使用 WASD + L 和左摇杆 + XInput B 测试八方向闪避。
+3. 确认无输入闪避沿当前朝向，纯纵深闪避不改变朝向。
+4. 确认 HUD 只在第 4 至 13 tick 显示 Invulnerable = true。
+5. 确认动作第 24 tick 结束，随后冷却从 45 减至 0 才可再次启动。
+6. 贴近四面边界反复闪避，确认 CharacterBody2D 不穿过 WorldStatic。
