@@ -76,11 +76,13 @@ REQUIRED_FILES = (
     "scripts/actors/elevation_model.gd",
     "scripts/actors/elevation_component.gd",
     "scripts/actors/dodge_model.gd",
+    "scripts/combat/state_machine_model.gd",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
     "docs/M1-MOV-002-TEST-PLAN.md",
     "docs/M1-MOV-003-TEST-PLAN.md",
+    "docs/M1-CMB-001-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -108,6 +110,7 @@ def main() -> int:
     validate_movement_contract(errors)
     validate_elevation_contract(errors)
     validate_dodge_contract(errors)
+    validate_state_machine_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -327,6 +330,49 @@ def validate_dodge_contract(errors: list[str]) -> None:
             errors.append("MOV-003 sandbox does not emit its readiness marker")
 
 
+def validate_state_machine_contract(errors: list[str]) -> None:
+    model_path = ROOT / "scripts/combat/state_machine_model.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    if not model_path.is_file():
+        return
+
+    model_text = model_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name StateMachineModel",
+        "extends RefCounted",
+        "signal state_changed",
+        "signal transition_rejected",
+        "func configure",
+        "func can_transition_to",
+        "func request_transition",
+        "func reset",
+        "REJECTION_NOT_CONFIGURED",
+        "REJECTION_UNKNOWN_TARGET",
+        "REJECTION_NOT_ALLOWED",
+    ):
+        if marker not in model_text:
+            errors.append(f"CMB-001 state machine missing marker: {marker}")
+
+    forbidden_dependencies = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+        r"get_node\s*\(",
+        model_text,
+    )
+    if forbidden_dependencies:
+        errors.append(
+            "CMB-001 state machine core depends on scene or presentation code: "
+            f"{forbidden_dependencies.group(0)}"
+        )
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if (
+            'GameLog.info(&"StateMachineSandbox", "CMB-001 core ready")'
+            not in sandbox_text
+        ):
+            errors.append("CMB-001 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -347,11 +393,12 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 24 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 29 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
         'grep -Fq "[DodgeSandbox] MOV-003 sandbox ready"',
+        'grep -Fq "[StateMachineSandbox] CMB-001 core ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:

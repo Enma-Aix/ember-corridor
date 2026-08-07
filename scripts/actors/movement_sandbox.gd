@@ -1,5 +1,9 @@
 extends Node2D
 
+const StateMachineModelScript := preload(
+	"res://scripts/combat/state_machine_model.gd"
+)
+
 @onready var player: PlayerGroundMovementController = %PlayerRoot
 @onready var debug_panel: PanelContainer = %DebugPanel
 @onready var movement_label: Label = %MovementLabel
@@ -13,6 +17,7 @@ func _ready() -> void:
 	GameLog.info(&"MovementSandbox", "MOV-001 sandbox ready")
 	GameLog.info(&"ElevationSandbox", "MOV-002 sandbox ready")
 	GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")
+	_verify_state_machine_core()
 
 
 func _process(_delta: float) -> void:
@@ -54,3 +59,19 @@ func _process(_delta: float) -> void:
 		player.dodge_direction().x,
 		player.dodge_direction().y,
 	]
+
+
+func _verify_state_machine_core() -> void:
+	var state_machine: StateMachineModel = StateMachineModelScript.new()
+	var configuration_errors := state_machine.configure(
+		&"Idle",
+		{
+			&"Idle": PackedStringArray(["Move"]),
+			&"Move": PackedStringArray(["Idle"]),
+		}
+	)
+	if not configuration_errors.is_empty():
+		for message: String in configuration_errors:
+			push_error("[CMB-001] %s" % message)
+		return
+	GameLog.info(&"StateMachineSandbox", "CMB-001 core ready")
