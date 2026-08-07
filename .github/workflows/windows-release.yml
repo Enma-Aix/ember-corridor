@@ -50,13 +50,21 @@ jobs:
             -File `
             -Recurse `
             | Select-Object -First 1
-          if ($null -eq $downloadedGodot) {
-            throw "Godot 4.7.1 Windows executable was not found"
+          $downloadedConsole = Get-ChildItem `
+            -Path $destination `
+            -Filter "Godot_v4.7.1-stable_win64_console.exe" `
+            -File `
+            -Recurse `
+            | Select-Object -First 1
+          if ($null -eq $downloadedGodot -or $null -eq $downloadedConsole) {
+            throw "Godot 4.7.1 Windows executables were not found"
           }
           $godot = Join-Path $env:RUNNER_TEMP "godot.exe"
+          $godotConsole = Join-Path $env:RUNNER_TEMP "godot_console.exe"
           Copy-Item $downloadedGodot.FullName $godot
+          Copy-Item $downloadedConsole.FullName $godotConsole
           Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP
-          $versionOutput = & $godot --version 2>&1
+          $versionOutput = & $godotConsole --version 2>&1
           $versionExitCode = $LASTEXITCODE
           $versionOutput
           if ($null -ne $versionExitCode -and $versionExitCode -ne 0) {
@@ -93,12 +101,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/test-results/release | Out-Null
-          & godot.exe --headless --path . --import --quit 2>&1 `
+          & godot_console.exe --headless --path . --import --quit 2>&1 `
             | Tee-Object -FilePath build/test-results/release/import.txt
           if ($LASTEXITCODE -ne 0) {
             throw "Godot project import failed with code $LASTEXITCODE"
           }
-          & godot.exe --headless --path . --script res://scripts/tools/validate_data.gd 2>&1 `
+          & godot_console.exe --headless --path . --script res://scripts/tools/validate_data.gd 2>&1 `
             | Tee-Object -FilePath build/test-results/release/data-validation.txt
           if ($LASTEXITCODE -ne 0) {
             throw "Resource validation failed with code $LASTEXITCODE"
@@ -114,7 +122,7 @@ jobs:
       - name: Run 64 game tests natively on Windows
         shell: pwsh
         run: |
-          & godot.exe --headless --path . --script res://tests/test_runner.gd 2>&1 `
+          & godot_console.exe --headless --path . --script res://tests/test_runner.gd 2>&1 `
             | Tee-Object -FilePath build/test-results/release/game-tests.txt
           if ($LASTEXITCODE -ne 0) {
             throw "Windows game tests failed with code $LASTEXITCODE"
@@ -138,7 +146,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path build/windows | Out-Null
           New-Item -ItemType Directory -Force -Path build/release | Out-Null
-          & godot.exe `
+          & godot_console.exe `
             --headless `
             --path . `
             --export-debug "Windows Desktop" `
