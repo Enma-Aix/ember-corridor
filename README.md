@@ -1,6 +1,6 @@
 # 余烬回廊（Ember Corridor）
 
-原创、完全离线的 2D 横版卷轴动作 RPG。M0 工程基线已经完成；当前分支实现 M1 的 MOV-001 地面移动与朝向，不包含跳跃、闪避、正式战斗、关卡或高保真 UI。
+原创、完全离线的 2D 横版卷轴动作 RPG。M0 工程基线已经完成；当前分支在 MOV-001 之上实现 M1 的 MOV-002 视觉高度、跳跃和阴影，不包含闪避、正式战斗、关卡或高保真 UI。
 
 ## 固定技术基线
 
@@ -19,8 +19,8 @@
 1. 从 Godot 官方归档下载 Godot 4.7.1 Standard。
 2. 在 Godot Project Manager 中导入本目录的 project.godot。
 3. 确认右上角渲染器为 Compatibility。
-4. 按 F5 启动 MOV-001 移动沙盒。
-5. 使用 WASD 或 XInput 左摇杆移动；右上角调试面板显示位置、速度和左右朝向。
+4. 按 F5 启动 M1 移动与跳跃沙盒。
+5. 使用 WASD 或 XInput 左摇杆移动，使用 K 或 XInput A 跳跃；右上角调试面板显示地面坐标、视觉高度和命中高度范围。
 
 键盘默认映射：
 
@@ -56,9 +56,12 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - 横向速度 320 px/s，纵深速度为横向的 90%。
 - 只有水平输入改变左右朝向，纯纵深移动不翻转角色。
 - CharacterBody2D 与 WorldStatic 灰盒边界碰撞。
-- 正常、边界和无效配置自动化测试。
+- MOV-002：视觉高度、竖直速度、重力、跳跃和稳定落地。
+- VisualRoot 随 elevation 上移；CharacterBody2D 地面坐标与 Shadow 保持在地面平面。
+- min_hit_height / max_hit_height 高度范围查询，可测试低位判定是否被跳过。
+- 正常、边界、无效配置和场景集成自动化测试。
 
-详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md。
+详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md 与 docs/M1-MOV-002-TEST-PLAN.md。
 
 ## M0 完成范围
 
@@ -71,7 +74,7 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - FND-007：Windows Debug 导出预设与 GitHub Actions 构建产物。
 - FND-008：Godot 许可说明和第三方资产登记表。
 
-完整冻结方案位于 docs/project-plan。MOV-002 的视觉高度与跳跃将在独立分支实现。
+完整冻结方案位于 docs/project-plan。MOV-003 的八方向闪避将在独立分支实现。
 
 ## 版权边界
 

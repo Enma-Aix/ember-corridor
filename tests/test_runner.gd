@@ -6,6 +6,7 @@ const SettingsServiceScript := preload("res://scripts/core/settings_service.gd")
 const GroundMovementModelScript := preload(
 	"res://scripts/actors/ground_movement_model.gd"
 )
+const ElevationModelScript := preload("res://scripts/actors/elevation_model.gd")
 
 var _case_results: Array[Dictionary] = []
 
@@ -22,6 +23,11 @@ func _run() -> void:
 	_record_case("ground movement normalizes boundary input", _test_ground_movement_boundaries())
 	_record_case("ground movement rejects invalid configuration", _test_ground_movement_invalid_configuration())
 	_record_case("ground movement facing ignores vertical input and stick jitter", _test_ground_movement_facing())
+	_record_case("elevation jump starts once and blocks air jumps", _test_elevation_jump_gating())
+	_record_case("elevation lands once and remains stable", _test_elevation_landing())
+	_record_case("elevation rejects invalid configuration and delta", _test_elevation_invalid_configuration())
+	_record_case("elevation height ranges support boundary queries", _test_elevation_height_ranges())
+	_record_case("elevation component separates visuals from ground coordinates", _test_elevation_component_separation())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -211,6 +217,143 @@ func _test_ground_movement_facing() -> PackedStringArray:
 		errors.append("sub-threshold stick jitter changed facing")
 	if movement.update_facing(1.0) != GroundMovementModel.FACING_RIGHT:
 		errors.append("right input did not face right")
+	return errors
+
+
+func _test_elevation_jump_gating() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elevation: ElevationModel = ElevationModelScript.new()
+	errors.append_array(elevation.configure(720.0, 1800.0, 0.0, 56.0))
+	if not elevation.grounded:
+		errors.append("new elevation model did not start grounded")
+	if not elevation.request_jump():
+		errors.append("grounded jump request was rejected")
+	if elevation.grounded:
+		errors.append("jump request did not leave the grounded state")
+	if not is_equal_approx(elevation.vertical_velocity, 720.0):
+		errors.append("jump request did not apply configured vertical velocity")
+	if elevation.request_jump():
+		errors.append("second jump request was accepted while airborne")
+	return errors
+
+
+func _test_elevation_landing() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elevation: ElevationModel = ElevationModelScript.new()
+	elevation.request_jump()
+	var landing_count := 0
+	var peak_elevation := 0.0
+	for _tick: int in range(180):
+		if elevation.advance(1.0 / 60.0):
+			landing_count += 1
+		peak_elevation = maxf(peak_elevation, elevation.elevation)
+	if peak_elevation <= 0.0:
+		errors.append("jump never produced positive elevation")
+	if landing_count != 1:
+		errors.append("jump emitted %d landings instead of one" % landing_count)
+	if not elevation.grounded:
+		errors.append("elevation did not return to grounded")
+	if not is_zero_approx(elevation.elevation):
+		errors.append("landing did not clamp elevation to zero")
+	if not is_zero_approx(elevation.vertical_velocity):
+		errors.append("landing did not clear vertical velocity")
+	for _tick: int in range(60):
+		if elevation.advance(1.0 / 60.0):
+			errors.append("grounded stability step reported another landing")
+			break
+	if not is_zero_approx(elevation.elevation):
+		errors.append("grounded stability steps drifted below or above zero")
+	return errors
+
+
+func _test_elevation_invalid_configuration() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elevation: ElevationModel = ElevationModelScript.new()
+	if elevation.configure(0.0, 1800.0, 0.0, 56.0).is_empty():
+		errors.append("zero jump speed was accepted")
+	if elevation.configure(720.0, 0.0, 0.0, 56.0).is_empty():
+		errors.append("zero gravity was accepted")
+	if elevation.configure(720.0, 1800.0, -1.0, 56.0).is_empty():
+		errors.append("negative minimum hit height was accepted")
+	if elevation.configure(720.0, 1800.0, 40.0, 20.0).is_empty():
+		errors.append("maximum hit height below minimum was accepted")
+	if not is_equal_approx(elevation.jump_speed, 720.0):
+		errors.append("invalid configuration changed jump speed")
+	if not is_equal_approx(elevation.gravity, 1800.0):
+		errors.append("invalid configuration changed gravity")
+
+	elevation.request_jump()
+	var before_elevation := elevation.elevation
+	var before_velocity := elevation.vertical_velocity
+	elevation.advance(0.0)
+	elevation.advance(-1.0)
+	if not is_equal_approx(elevation.elevation, before_elevation):
+		errors.append("invalid delta changed elevation")
+	if not is_equal_approx(elevation.vertical_velocity, before_velocity):
+		errors.append("invalid delta changed vertical velocity")
+	if elevation.overlaps_height_range(24.0, 12.0):
+		errors.append("reversed height query was accepted")
+	return errors
+
+
+func _test_elevation_height_ranges() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var elevation: ElevationModel = ElevationModelScript.new()
+	if not elevation.overlaps_height_range(0.0, 24.0):
+		errors.append("grounded actor did not overlap a low height range")
+	elevation.request_jump()
+	for _tick: int in range(12):
+		elevation.advance(1.0 / 60.0)
+	var elevated_range := elevation.hit_height_range()
+	if elevated_range.x <= 24.0:
+		errors.append("test jump did not clear the low probe height")
+	if elevation.overlaps_height_range(0.0, 24.0):
+		errors.append("airborne actor still overlapped the cleared low probe")
+	if not elevation.overlaps_height_range(elevated_range.y, elevated_range.y + 8.0):
+		errors.append("inclusive hit-height boundary did not overlap")
+	if elevation.overlaps_height_range(elevated_range.y + 8.0, elevated_range.y + 16.0):
+		errors.append("separated hit-height ranges incorrectly overlapped")
+	return errors
+
+
+func _test_elevation_component_separation() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var player_scene := ResourceLoader.load("res://scenes/actors/player.tscn") as PackedScene
+	if player_scene == null:
+		errors.append("player scene could not be loaded for elevation integration")
+		return errors
+	var player := player_scene.instantiate() as CharacterBody2D
+	if player == null:
+		errors.append("player scene root is not CharacterBody2D")
+		return errors
+	root.add_child(player)
+	player.set_physics_process(false)
+	var component := player.get_node_or_null("Elevation") as ElevationComponent
+	var visual_root := player.get_node_or_null("VisualRoot") as Node2D
+	var shadow := player.get_node_or_null("Shadow") as Node2D
+	if component == null or visual_root == null or shadow == null:
+		errors.append("player scene is missing elevation integration nodes")
+		player.free()
+		return errors
+	component.set_physics_process(false)
+	var ground_before := player.global_position
+	var visual_before := visual_root.position
+	var shadow_before := shadow.position
+	if not component.request_jump():
+		errors.append("player elevation component rejected a grounded jump")
+	component.advance_physics(1.0 / 60.0)
+	if not player.global_position.is_equal_approx(ground_before):
+		errors.append("visual elevation changed the CharacterBody2D ground position")
+	if visual_root.position.y >= visual_before.y:
+		errors.append("visual root did not move upward after jump")
+	if not is_equal_approx(
+		visual_root.position.y,
+		visual_before.y - component.elevation()
+	):
+		errors.append("visual root offset does not match elevation")
+	if not shadow.position.is_equal_approx(shadow_before):
+		errors.append("ground shadow moved with the elevated visual root")
+	player.free()
 	return errors
 
 
