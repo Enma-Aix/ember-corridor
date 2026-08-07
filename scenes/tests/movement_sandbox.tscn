@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/actors/movement_sandbox.gd" id="1_sandbox"]
 [ext_resource type="PackedScene" path="res://scenes/actors/player.tscn" id="2_player"]
@@ -24,6 +24,27 @@ corner_radius_bottom_left = 6
 [sub_resource type="LabelSettings" id="LabelSettings_title"]
 font_size = 24
 font_color = Color(0.98, 0.72, 0.37, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_startup"]
+bg_color = Color(0.16, 0.34, 0.5, 0.95)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_active"]
+bg_color = Color(0.78, 0.3, 0.08, 0.98)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_recovery"]
+bg_color = Color(0.3, 0.24, 0.48, 0.95)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
 [node name="MovementSandbox" type="Node2D"]
 script = ExtResource("1_sandbox")
@@ -81,7 +102,7 @@ offset_left = 32.0
 offset_top = 24.0
 offset_right = 420.0
 offset_bottom = 60.0
-text = "余烬回廊 · M1 移动、跳跃与闪避沙盒"
+text = "余烬回廊 · M1 战斗核心沙盒"
 label_settings = SubResource("LabelSettings_title")
 
 [node name="Instruction" type="Label" parent="Hud"]
@@ -90,7 +111,7 @@ offset_top = 62.0
 offset_right = 1040.0
 offset_bottom = 92.0
 theme_override_colors/font_color = Color(0.7, 0.74, 0.82, 1)
-text = "WASD / 左摇杆：移动 · K / XInput A：跳跃 · L / XInput B：24 tick 八方向闪避"
+text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：攻击时间线预览"
 
 [node name="DebugPanel" type="PanelContainer" parent="Hud"]
 unique_name_in_owner = true
@@ -111,3 +132,81 @@ theme_override_constants/margin_bottom = 10
 unique_name_in_owner = true
 layout_mode = 2
 text = "Ground\nMove velocity\nFacing\nElevation\nVertical velocity\nGrounded\nHit height\nLow probe\nDodge\nInvulnerable\nDodge cooldown\nDodge direction"
+
+[node name="AttackTimelinePanel" type="PanelContainer" parent="Hud"]
+unique_name_in_owner = true
+offset_left = 32.0
+offset_top = 536.0
+offset_right = 716.0
+offset_bottom = 704.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="TimelineMargin" type="MarginContainer" parent="Hud/AttackTimelinePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 9
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 9
+
+[node name="TimelineVBox" type="VBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="TimelineTitle" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.72, 0.37, 1)
+text = "CMB-002 · attack.dev.a1_placeholder"
+
+[node name="TimelineBar" type="HBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StartupSegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(108, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_startup")
+
+[node name="StartupLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/StartupSegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Startup\n1-6"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ActiveSegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(54, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_active")
+
+[node name="ActiveLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/ActiveSegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Active\n7-9"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RecoverySegment" type="PanelContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(198, 34)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_recovery")
+
+[node name="RecoveryLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/RecoverySegment"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Recovery\n10-20"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TimelineStatusLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Preview: idle · press J / XInput X · total 20 tick"
+
+[node name="CancelWindowsLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.82, 0.94, 1)
+text = "Cancel: tick 15-20 → action.dodge"

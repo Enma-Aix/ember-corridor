@@ -77,12 +77,17 @@ REQUIRED_FILES = (
     "scripts/actors/elevation_component.gd",
     "scripts/actors/dodge_model.gd",
     "scripts/combat/state_machine_model.gd",
+    "scripts/data/attack_definition.gd",
+    "scripts/data/attack_cancel_window.gd",
+    "scripts/combat/attack_timeline_model.gd",
+    "data/attacks/dev_a1.tres",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
     "docs/M1-MOV-002-TEST-PLAN.md",
     "docs/M1-MOV-003-TEST-PLAN.md",
     "docs/M1-CMB-001-TEST-PLAN.md",
+    "docs/M1-CMB-002-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -111,6 +116,7 @@ def main() -> int:
     validate_elevation_contract(errors)
     validate_dodge_contract(errors)
     validate_state_machine_contract(errors)
+    validate_attack_timeline_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -373,6 +379,99 @@ def validate_state_machine_contract(errors: list[str]) -> None:
             errors.append("CMB-001 sandbox does not emit its readiness marker")
 
 
+def validate_attack_timeline_contract(errors: list[str]) -> None:
+    definition_path = ROOT / "scripts/data/attack_definition.gd"
+    cancel_window_path = ROOT / "scripts/data/attack_cancel_window.gd"
+    timeline_path = ROOT / "scripts/combat/attack_timeline_model.gd"
+    resource_path = ROOT / "data/attacks/dev_a1.tres"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    if not all(
+        path.is_file()
+        for path in (definition_path, cancel_window_path, timeline_path, resource_path)
+    ):
+        return
+
+    definition_text = definition_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name AttackDefinition",
+        "var startup_ticks",
+        "var active_ticks",
+        "var recovery_ticks",
+        "var cancel_windows: Array[AttackCancelWindow]",
+        "var hit_stop_ticks",
+        "func total_ticks",
+        "func phase_at_tick",
+        "func is_active_tick",
+        "func cancel_targets_at_tick",
+        "func phase_tick_range",
+    ):
+        if marker not in definition_text:
+            errors.append(f"CMB-002 AttackDefinition missing marker: {marker}")
+
+    cancel_window_text = cancel_window_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name AttackCancelWindow",
+        "var start_tick",
+        "var end_tick",
+        "var target_tags: Array[StringName]",
+        "func validation_errors",
+        "func contains_tick",
+    ):
+        if marker not in cancel_window_text:
+            errors.append(f"CMB-002 cancel window missing marker: {marker}")
+
+    timeline_text = timeline_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name AttackTimelineModel",
+        "extends RefCounted",
+        "signal timeline_started",
+        "signal tick_advanced",
+        "signal phase_changed",
+        "signal timeline_completed",
+        "func start",
+        "duplicate(true)",
+        "func advance_tick",
+        "func available_cancel_targets",
+        "func reset",
+    ):
+        if marker not in timeline_text:
+            errors.append(f"CMB-002 timeline model missing marker: {marker}")
+    forbidden_dependencies = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+        r"get_node\s*\(",
+        timeline_text,
+    )
+    if forbidden_dependencies:
+        errors.append(
+            "CMB-002 timeline core depends on scene or presentation code: "
+            f"{forbidden_dependencies.group(0)}"
+        )
+
+    resource_text = resource_path.read_text(encoding="utf-8")
+    for marker in (
+        'definition_id = &"attack.dev.a1_placeholder"',
+        "startup_ticks = 6",
+        "active_ticks = 3",
+        "recovery_ticks = 11",
+        "start_tick = 15",
+        "end_tick = 20",
+        '&"action.dodge"',
+        "hit_stop_ticks = 3",
+    ):
+        if marker not in resource_text:
+            errors.append(f"CMB-002 placeholder attack missing marker: {marker}")
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if 'Input.is_action_just_pressed(&"attack")' not in sandbox_text:
+            errors.append("CMB-002 sandbox does not read the attack Input action")
+        if (
+            'GameLog.info(&"AttackTimelineSandbox", "CMB-002 timeline ready")'
+            not in sandbox_text
+        ):
+            errors.append("CMB-002 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -388,17 +487,18 @@ def validate_workflow(errors: list[str]) -> None:
         "cp licenses/GODOT-ENGINE-LICENSE.md",
         "cp docs/ASSET-LICENSE-REGISTER.csv",
         '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
-        'grep -Fq "[DataRegistry] Loaded 1 definition(s)"',
+        'grep -Fq "[DataRegistry] Loaded 2 definition(s)"',
         "actions/upload-artifact@v4",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 29 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 35 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
         'grep -Fq "[DodgeSandbox] MOV-003 sandbox ready"',
         'grep -Fq "[StateMachineSandbox] CMB-001 core ready"',
+        'grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:

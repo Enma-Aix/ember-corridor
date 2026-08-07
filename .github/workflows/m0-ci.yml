@@ -61,6 +61,8 @@ jobs:
             build/test-results/project-boot.txt
           grep -Fq "[StateMachineSandbox] CMB-001 core ready" \
             build/test-results/project-boot.txt
+          grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
+            build/test-results/project-boot.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
             exit 1
           fi
@@ -88,7 +90,9 @@ jobs:
           godot --headless --path . --export-pack "Windows Desktop" "$RUNNER_TEMP/ember-corridor-m0.pck"
           godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 2>&1 \
             | tee build/test-results/packaged-smoke.txt
-          grep -Fq "[DataRegistry] Loaded 1 definition(s)" build/test-results/packaged-smoke.txt
+          grep -Fq "[DataRegistry] Loaded 2 definition(s)" build/test-results/packaged-smoke.txt
+          grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
+            build/test-results/packaged-smoke.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/packaged-smoke.txt; then
             exit 1
           fi
@@ -182,7 +186,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 29 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 35 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -197,7 +201,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/project-boot.txt `
-            -Pattern "[DataRegistry] Loaded 1 definition(s)" `
+            -Pattern "[DataRegistry] Loaded 2 definition(s)" `
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not initialize DataRegistry"
@@ -229,6 +233,13 @@ jobs:
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not instantiate the CMB-001 state-machine core"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[AttackTimelineSandbox] CMB-002 timeline ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-002 attack timeline"
           }
           if (Select-String `
             -Path build/test-results/windows/project-boot.txt `
@@ -289,7 +300,7 @@ jobs:
           }
 
           $combinedLog = (Get-Content $stdout -Raw) + "`n" + (Get-Content $stderr -Raw)
-          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 1 definition\(s\)") {
+          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 2 definition\(s\)") {
             throw "Exported Windows game did not initialize DataRegistry"
           }
           if ($combinedLog -notmatch "\[App\] Foundation services initialized") {
@@ -306,6 +317,9 @@ jobs:
           }
           if ($combinedLog -notmatch "\[StateMachineSandbox\] CMB-001 core ready") {
             throw "Exported Windows game did not instantiate the CMB-001 state-machine core"
+          }
+          if ($combinedLog -notmatch "\[AttackTimelineSandbox\] CMB-002 timeline ready") {
+            throw "Exported Windows game did not instantiate the CMB-002 attack timeline"
           }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Exported Windows game logged a Godot runtime error"
