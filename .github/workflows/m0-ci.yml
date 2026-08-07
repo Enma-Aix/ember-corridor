@@ -57,6 +57,8 @@ jobs:
             build/test-results/project-boot.txt
           grep -Fq "[ElevationSandbox] MOV-002 sandbox ready" \
             build/test-results/project-boot.txt
+          grep -Fq "[DodgeSandbox] MOV-003 sandbox ready" \
+            build/test-results/project-boot.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
             exit 1
           fi
@@ -178,7 +180,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 19 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 24 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -211,6 +213,13 @@ jobs:
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not instantiate the MOV-002 elevation sandbox"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DodgeSandbox] MOV-003 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-003 dodge sandbox"
           }
           if (Select-String `
             -Path build/test-results/windows/project-boot.txt `
@@ -282,6 +291,9 @@ jobs:
           }
           if ($combinedLog -notmatch "\[ElevationSandbox\] MOV-002 sandbox ready") {
             throw "Exported Windows game did not instantiate the MOV-002 elevation sandbox"
+          }
+          if ($combinedLog -notmatch "\[DodgeSandbox\] MOV-003 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-003 dodge sandbox"
           }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Exported Windows game logged a Godot runtime error"

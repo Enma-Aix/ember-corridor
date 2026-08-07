@@ -12,6 +12,7 @@ func _ready() -> void:
 	debug_panel.visible = OS.is_debug_build()
 	GameLog.info(&"MovementSandbox", "MOV-001 sandbox ready")
 	GameLog.info(&"ElevationSandbox", "MOV-002 sandbox ready")
+	GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")
 
 
 func _process(_delta: float) -> void:
@@ -28,7 +29,11 @@ func _process(_delta: float) -> void:
 		+ "Vertical velocity: %.1f\n"
 		+ "Grounded: %s\n"
 		+ "Hit height: %.1f - %.1f\n"
-		+ "Low probe 0-24: %s"
+		+ "Low probe 0-24: %s\n"
+		+ "Dodge: %s · tick %d\n"
+		+ "Invulnerable: %s\n"
+		+ "Dodge cooldown: %d\n"
+		+ "Dodge direction: (%.2f, %.2f)"
 	)
 	movement_label.text = debug_text % [
 		player.global_position.x,
@@ -42,4 +47,10 @@ func _process(_delta: float) -> void:
 		hit_range.x,
 		hit_range.y,
 		"overlap" if low_probe_overlap else "clear",
+		"active" if player.is_dodging() else "idle",
+		player.dodge_tick(),
+		str(player.is_dodge_invulnerable()),
+		player.dodge_cooldown_ticks(),
+		player.dodge_direction().x,
+		player.dodge_direction().y,
 	]
