@@ -70,6 +70,12 @@ REQUIRED_FILES = (
     "scripts/data/base_definition.gd",
     "scripts/tools/validate_data.gd",
     "tests/test_runner.gd",
+    "scripts/actors/ground_movement_model.gd",
+    "scripts/actors/ground_movement_controller.gd",
+    "scripts/actors/movement_sandbox.gd",
+    "scenes/actors/player.tscn",
+    "scenes/tests/movement_sandbox.tscn",
+    "docs/M1-MOV-001-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -94,6 +100,7 @@ def main() -> int:
     errors: list[str] = []
     validate_required_files(errors)
     validate_project_settings(errors)
+    validate_movement_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -132,6 +139,7 @@ def validate_project_settings(errors: list[str]) -> None:
         'config/features=PackedStringArray("4.7", "GL Compatibility")',
         'renderer/rendering_method="gl_compatibility"',
         "common/physics_ticks_per_second=60",
+        'run/main_scene="res://scenes/tests/movement_sandbox.tscn"',
     )
     for marker in required_markers:
         if marker not in text:
@@ -162,6 +170,43 @@ def validate_project_settings(errors: list[str]) -> None:
             errors.append(f"unapproved Autoload services: {', '.join(unexpected)}")
 
 
+def validate_movement_contract(errors: list[str]) -> None:
+    model_path = ROOT / "scripts/actors/ground_movement_model.gd"
+    controller_path = ROOT / "scripts/actors/ground_movement_controller.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    if not model_path.is_file() or not controller_path.is_file():
+        return
+
+    model_text = model_path.read_text(encoding="utf-8")
+    for marker in (
+        "horizontal_speed := 320.0",
+        "depth_speed_ratio := 0.9",
+        "raw_input.limit_length(1.0)",
+        "FACING_INPUT_THRESHOLD := 0.01",
+    ):
+        if marker not in model_text:
+            errors.append(f"MOV-001 movement model missing marker: {marker}")
+
+    controller_text = controller_path.read_text(encoding="utf-8")
+    for action in ("move_left", "move_right", "move_up", "move_down"):
+        if f'&"{action}"' not in controller_text:
+            errors.append(f"MOV-001 controller does not read Input action: {action}")
+    forbidden_input_access = re.search(
+        r"\bKEY_[A-Z0-9_]+\b|physical_keycode|Input\.is_key_pressed",
+        controller_text,
+    )
+    if forbidden_input_access:
+        errors.append(
+            "MOV-001 controller bypasses Input actions: "
+            f"{forbidden_input_access.group(0)}"
+        )
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if 'GameLog.info(&"MovementSandbox", "MOV-001 sandbox ready")' not in sandbox_text:
+            errors.append("MOV-001 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -182,8 +227,9 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "M0 TEST SUMMARY: 10 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 14 passed, 0 failed",
         "Run exported game natively",
+        'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
     ):
         if marker not in text:
             errors.append(f"CI workflow missing step marker: {marker}")

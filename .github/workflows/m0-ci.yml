@@ -1,12 +1,14 @@
-name: M0 Foundation CI
+name: Ember Corridor CI
 
 on:
   push:
     branches:
       - codex/m0-foundation
+      - "codex/m1-*"
   pull_request:
     branches:
       - main
+      - codex/m0-foundation
   workflow_dispatch:
 
 permissions:
@@ -47,7 +49,11 @@ jobs:
         run: godot --headless --path . --script res://tests/test_runner.gd
 
       - name: Smoke-test the boot scene
-        run: godot --headless --path . --quit-after 3
+        run: |
+          godot --headless --path . --quit-after 120 \
+            | tee build/test-results/project-boot.txt
+          grep -Fq "[MovementSandbox] MOV-001 sandbox ready" \
+            build/test-results/project-boot.txt
 
       - name: Install official export templates
         run: |
@@ -163,7 +169,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "M0 TEST SUMMARY: 10 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 14 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -182,6 +188,13 @@ jobs:
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not initialize DataRegistry"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[MovementSandbox] MOV-001 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-001 sandbox"
           }
 
       - name: Download Windows Debug artifact
@@ -241,6 +254,9 @@ jobs:
           }
           if ($combinedLog -notmatch "\[App\] Foundation services initialized") {
             throw "Exported Windows game did not finish service initialization"
+          }
+          if ($combinedLog -notmatch "\[MovementSandbox\] MOV-001 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-001 sandbox"
           }
 
           $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

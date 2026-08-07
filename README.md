@@ -1,6 +1,6 @@
 # 余烬回廊（Ember Corridor）
 
-原创、完全离线的 2D 横版卷轴动作 RPG。当前仓库处于 M0 工程基线阶段，只包含可验证的 Godot 工程基础，不包含正式战斗、关卡或高保真 UI。
+原创、完全离线的 2D 横版卷轴动作 RPG。M0 工程基线已经完成；当前分支实现 M1 的 MOV-001 地面移动与朝向，不包含跳跃、闪避、正式战斗、关卡或高保真 UI。
 
 ## 固定技术基线
 
@@ -19,8 +19,8 @@
 1. 从 Godot 官方归档下载 Godot 4.7.1 Standard。
 2. 在 Godot Project Manager 中导入本目录的 project.godot。
 3. 确认右上角渲染器为 Compatibility。
-4. 按 F6 或 F5 启动 M0 调试场景。
-5. 在调试构建中按键或操作 XInput 手柄，屏幕会显示当前输入设备和被识别的 Action。
+4. 按 F5 启动 MOV-001 移动沙盒。
+5. 使用 WASD 或 XInput 左摇杆移动；右上角调试面板显示位置、速度和左右朝向。
 
 键盘默认映射：
 
@@ -48,7 +48,17 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
     mkdir -p build/windows
     godot --headless --path . --export-debug "Windows Desktop" build/windows/EmberCorridor.exe
 
-测试失败时返回非零退出码，JUnit XML 和 JSON 报告写入 build/test-results。CI 还会把同一导出预设生成为 PCK 并实际启动，验证打包后的动态 Resource 扫描。
+测试失败时返回非零退出码，JUnit XML 和 JSON 报告写入 build/test-results。CI 会在 Linux 和 Windows 原生环境运行测试，并实际启动导出的 Windows EXE。
+
+## M1 当前范围
+
+- MOV-001：八方向地面移动。
+- 横向速度 320 px/s，纵深速度为横向的 90%。
+- 只有水平输入改变左右朝向，纯纵深移动不翻转角色。
+- CharacterBody2D 与 WorldStatic 灰盒边界碰撞。
+- 正常、边界和无效配置自动化测试。
+
+详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md。
 
 ## M0 完成范围
 
@@ -61,7 +71,7 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - FND-007：Windows Debug 导出预设与 GitHub Actions 构建产物。
 - FND-008：Godot 许可说明和第三方资产登记表。
 
-完整冻结方案位于 docs/project-plan。下一阶段是 M1 战斗沙盒，未经单独批准不会在本分支实现。
+完整冻结方案位于 docs/project-plan。MOV-002 的视觉高度与跳跃将在独立分支实现。
 
 ## 版权边界
 
