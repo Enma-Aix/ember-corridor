@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - codex/m0-foundation
+      - "codex/m1-*"
   workflow_dispatch:
 
 permissions:
@@ -50,10 +51,15 @@ jobs:
 
       - name: Smoke-test the boot scene
         run: |
-          godot --headless --path . --quit-after 120 \
+          godot --headless --path . --quit-after 120 2>&1 \
             | tee build/test-results/project-boot.txt
           grep -Fq "[MovementSandbox] MOV-001 sandbox ready" \
             build/test-results/project-boot.txt
+          grep -Fq "[ElevationSandbox] MOV-002 sandbox ready" \
+            build/test-results/project-boot.txt
+          if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
+            exit 1
+          fi
 
       - name: Install official export templates
         run: |
@@ -76,9 +82,12 @@ jobs:
       - name: Smoke-test packaged resources
         run: |
           godot --headless --path . --export-pack "Windows Desktop" "$RUNNER_TEMP/ember-corridor-m0.pck"
-          godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 \
+          godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 2>&1 \
             | tee build/test-results/packaged-smoke.txt
           grep -Fq "[DataRegistry] Loaded 1 definition(s)" build/test-results/packaged-smoke.txt
+          if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/packaged-smoke.txt; then
+            exit 1
+          fi
 
       - name: Upload test reports
         if: always()
@@ -169,7 +178,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 14 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 19 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -195,6 +204,19 @@ jobs:
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not instantiate the MOV-001 sandbox"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[ElevationSandbox] MOV-002 sandbox ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the MOV-002 elevation sandbox"
+          }
+          if (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "^(SCRIPT )?ERROR:" `
+            -Quiet) {
+            throw "Windows project boot logged a Godot runtime error"
           }
 
       - name: Download Windows Debug artifact
@@ -257,6 +279,12 @@ jobs:
           }
           if ($combinedLog -notmatch "\[MovementSandbox\] MOV-001 sandbox ready") {
             throw "Exported Windows game did not instantiate the MOV-001 sandbox"
+          }
+          if ($combinedLog -notmatch "\[ElevationSandbox\] MOV-002 sandbox ready") {
+            throw "Exported Windows game did not instantiate the MOV-002 elevation sandbox"
+          }
+          if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
+            throw "Exported Windows game logged a Godot runtime error"
           }
 
           $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

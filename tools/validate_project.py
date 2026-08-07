@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fast, dependency-free validation for the M0 repository contract."""
+"""Fast, dependency-free validation for the project repository contract."""
 
 from __future__ import annotations
 
@@ -73,9 +73,12 @@ REQUIRED_FILES = (
     "scripts/actors/ground_movement_model.gd",
     "scripts/actors/ground_movement_controller.gd",
     "scripts/actors/movement_sandbox.gd",
+    "scripts/actors/elevation_model.gd",
+    "scripts/actors/elevation_component.gd",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
     "docs/M1-MOV-001-TEST-PLAN.md",
+    "docs/M1-MOV-002-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -101,18 +104,19 @@ def main() -> int:
     validate_required_files(errors)
     validate_project_settings(errors)
     validate_movement_contract(errors)
+    validate_elevation_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
     validate_offline_boundary(errors)
 
     if errors:
-        print(f"M0 STATIC VALIDATION: FAIL ({len(errors)} issue(s))")
+        print(f"PROJECT STATIC VALIDATION: FAIL ({len(errors)} issue(s))")
         for error in errors:
             print(f"  - {error}")
         return 1
 
-    print("M0 STATIC VALIDATION: PASS")
+    print("PROJECT STATIC VALIDATION: PASS")
     print(f"  - {len(REQUIRED_FILES)} required files")
     print(f"  - {len(REQUIRED_ACTIONS)} Input actions")
     print(f"  - {len(EXPECTED_LAYERS)} named collision layers")
@@ -207,6 +211,63 @@ def validate_movement_contract(errors: list[str]) -> None:
             errors.append("MOV-001 sandbox does not emit its readiness marker")
 
 
+def validate_elevation_contract(errors: list[str]) -> None:
+    model_path = ROOT / "scripts/actors/elevation_model.gd"
+    component_path = ROOT / "scripts/actors/elevation_component.gd"
+    player_scene_path = ROOT / "scenes/actors/player.tscn"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    if not model_path.is_file() or not component_path.is_file():
+        return
+
+    model_text = model_path.read_text(encoding="utf-8")
+    for marker in (
+        "jump_speed := 720.0",
+        "gravity := 1800.0",
+        "min_hit_height := 0.0",
+        "max_hit_height := 56.0",
+        "func overlaps_height_range",
+        "_snap_to_ground()",
+    ):
+        if marker not in model_text:
+            errors.append(f"MOV-002 elevation model missing marker: {marker}")
+
+    component_text = component_path.read_text(encoding="utf-8")
+    for marker in (
+        'Input.is_action_just_pressed(&"jump")',
+        "_base_visual_position.y - _elevation_model.elevation",
+        "signal jump_started",
+        "signal landed",
+    ):
+        if marker not in component_text:
+            errors.append(f"MOV-002 elevation component missing marker: {marker}")
+    forbidden_input_access = re.search(
+        r"\bKEY_[A-Z0-9_]+\b|physical_keycode|Input\.is_key_pressed",
+        component_text,
+    )
+    if forbidden_input_access:
+        errors.append(
+            "MOV-002 elevation component bypasses Input actions: "
+            f"{forbidden_input_access.group(0)}"
+        )
+    if "global_position" in model_text or "global_position" in component_text:
+        errors.append("MOV-002 elevation logic must not mutate ground coordinates")
+
+    if player_scene_path.is_file():
+        player_scene = player_scene_path.read_text(encoding="utf-8")
+        for marker in (
+            '[node name="Elevation" type="Node" parent="."]',
+            '[node name="Shadow" type="Polygon2D" parent="."]',
+            '[node name="VisualRoot" type="Node2D" parent="."]',
+        ):
+            if marker not in player_scene:
+                errors.append(f"MOV-002 player scene missing marker: {marker}")
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if 'GameLog.info(&"ElevationSandbox", "MOV-002 sandbox ready")' not in sandbox_text:
+            errors.append("MOV-002 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -227,9 +288,11 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 14 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 19 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
+        'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
+        'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:
             errors.append(f"CI workflow missing step marker: {marker}")
