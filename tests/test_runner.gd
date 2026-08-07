@@ -8,6 +8,9 @@ const GroundMovementModelScript := preload(
 )
 const ElevationModelScript := preload("res://scripts/actors/elevation_model.gd")
 const DodgeModelScript := preload("res://scripts/actors/dodge_model.gd")
+const StateMachineModelScript := preload(
+	"res://scripts/combat/state_machine_model.gd"
+)
 
 var _case_results: Array[Dictionary] = []
 
@@ -35,6 +38,11 @@ func _run() -> void:
 	_record_case("dodge cooldown blocks exactly 45 ticks", _test_dodge_cooldown_boundary())
 	var dodge_wall_errors: PackedStringArray = await _test_dodge_wall_collision()
 	_record_case("dodge cannot cross WorldStatic walls", dodge_wall_errors)
+	_record_case("state machine accepts a valid transition table", _test_state_machine_configuration())
+	_record_case("state machine applies legal transitions and signals", _test_state_machine_legal_transitions())
+	_record_case("state machine rejects illegal transitions with reasons", _test_state_machine_rejections())
+	_record_case("state machine invalid configuration is transactional", _test_state_machine_invalid_configuration())
+	_record_case("state machine reset and terminal state remain stable", _test_state_machine_reset_and_terminal_stability())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -511,6 +519,204 @@ func _test_dodge_wall_collision() -> PackedStringArray:
 	if not saw_invulnerability:
 		errors.append("wall integration dodge never entered invulnerability")
 	sandbox.free()
+	return errors
+
+
+func _state_machine_fixture_table() -> Dictionary:
+	return {
+		&"Idle": PackedStringArray(["Move", "Dodge"]),
+		&"Move": PackedStringArray(["Idle", "Dodge", "Defeated"]),
+		&"Dodge": PackedStringArray(["Idle"]),
+		&"Defeated": PackedStringArray(),
+	}
+
+
+func _test_state_machine_configuration() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var machine: StateMachineModel = StateMachineModelScript.new()
+	errors.append_array(machine.configure(&"Idle", _state_machine_fixture_table()))
+	if not machine.is_configured():
+		errors.append("valid transition table did not configure the state machine")
+	if machine.current_state != &"Idle" or machine.previous_state != &"":
+		errors.append("configured state machine did not start in Idle")
+	if machine.transition_count != 0:
+		errors.append("configuration incorrectly counted an initial transition")
+	var known_states := machine.known_states()
+	var expected_states := PackedStringArray(["Defeated", "Dodge", "Idle", "Move"])
+	if known_states != expected_states:
+		errors.append(
+			"known states were not returned in deterministic order: %s"
+			% str(known_states)
+		)
+	if not machine.can_transition_to(&"Move") or not machine.can_transition_to(&"Dodge"):
+		errors.append("Idle did not expose both configured branch targets")
+	var exposed_targets := machine.allowed_targets_from(&"Idle")
+	exposed_targets.clear()
+	if machine.allowed_targets_from(&"Idle").size() != 2:
+		errors.append("caller mutation changed the internal transition table")
+	return errors
+
+
+func _test_state_machine_legal_transitions() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var machine: StateMachineModel = StateMachineModelScript.new()
+	machine.configure(&"Idle", _state_machine_fixture_table())
+	var events: Array[Dictionary] = []
+	machine.state_changed.connect(
+		func(
+			previous_state: StringName,
+			current_state: StringName,
+			transition_index: int
+		) -> void:
+			events.append(
+				{
+					"previous": previous_state,
+					"current": current_state,
+					"index": transition_index,
+				}
+			)
+	)
+	if not machine.request_transition(&"Move"):
+		errors.append("legal Idle -> Move transition was rejected")
+	if not machine.request_transition(&"Dodge"):
+		errors.append("legal Move -> Dodge transition was rejected")
+	if machine.previous_state != &"Move" or machine.current_state != &"Dodge":
+		errors.append("legal transitions did not update previous/current state")
+	if machine.transition_count != 2 or events.size() != 2:
+		errors.append("legal transitions did not increment and signal exactly twice")
+	elif (
+		events[0]["previous"] != &"Idle"
+		or events[0]["current"] != &"Move"
+		or events[0]["index"] != 1
+		or events[1]["previous"] != &"Move"
+		or events[1]["current"] != &"Dodge"
+		or events[1]["index"] != 2
+	):
+		errors.append("state_changed signal payload did not match transitions")
+	if machine.last_rejection_code != &"" or not machine.last_rejection_message.is_empty():
+		errors.append("successful transition retained a stale rejection reason")
+	return errors
+
+
+func _test_state_machine_rejections() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var unconfigured: StateMachineModel = StateMachineModelScript.new()
+	if unconfigured.request_transition(&"Idle"):
+		errors.append("unconfigured state machine accepted a transition")
+	if unconfigured.last_rejection_code != StateMachineModel.REJECTION_NOT_CONFIGURED:
+		errors.append("unconfigured rejection did not use its stable reason code")
+
+	var machine: StateMachineModel = StateMachineModelScript.new()
+	machine.configure(&"Idle", _state_machine_fixture_table())
+	var rejection_events: Array[Dictionary] = []
+	machine.transition_rejected.connect(
+		func(
+			current_state: StringName,
+			target_state: StringName,
+			reason_code: StringName,
+			message: String
+		) -> void:
+			rejection_events.append(
+				{
+					"current": current_state,
+					"target": target_state,
+					"reason": reason_code,
+					"message": message,
+				}
+			)
+	)
+	if machine.request_transition(&""):
+		errors.append("empty target transition was accepted")
+	if machine.last_rejection_code != StateMachineModel.REJECTION_EMPTY_TARGET:
+		errors.append("empty target did not use its stable rejection code")
+	if machine.request_transition(&"Airborne"):
+		errors.append("unknown target transition was accepted")
+	if machine.last_rejection_code != StateMachineModel.REJECTION_UNKNOWN_TARGET:
+		errors.append("unknown target did not use its stable rejection code")
+	if machine.request_transition(&"Defeated"):
+		errors.append("table-forbidden Idle -> Defeated transition was accepted")
+	if machine.last_rejection_code != StateMachineModel.REJECTION_NOT_ALLOWED:
+		errors.append("forbidden transition did not use its stable rejection code")
+	if machine.current_state != &"Idle" or machine.transition_count != 0:
+		errors.append("rejected transitions mutated state or transition count")
+	if rejection_events.size() != 3:
+		errors.append("rejected transitions did not emit exactly three events")
+	else:
+		for event: Dictionary in rejection_events:
+			if event["current"] != &"Idle" or String(event["message"]).is_empty():
+				errors.append("transition_rejected signal omitted context")
+				break
+	return errors
+
+
+func _test_state_machine_invalid_configuration() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var machine: StateMachineModel = StateMachineModelScript.new()
+	if machine.configure(&"Idle", {}).is_empty():
+		errors.append("empty transition table was accepted")
+	if machine.configure(&"Ghost", _state_machine_fixture_table()).is_empty():
+		errors.append("undeclared initial state was accepted")
+	if machine.configure(
+		&"Idle",
+		{&"Idle": PackedStringArray(["Ghost"])}
+	).is_empty():
+		errors.append("undeclared transition target was accepted")
+	if machine.configure(
+		&"Idle",
+		{&"Idle": PackedStringArray(["Idle", "Idle"])}
+	).is_empty():
+		errors.append("duplicate transition target was accepted")
+	if machine.configure(&"Idle", {&"Idle": 42}).is_empty():
+		errors.append("non-array transition target collection was accepted")
+	if machine.configure(&"Idle", {&" Idle": PackedStringArray()}).is_empty():
+		errors.append("whitespace-padded state ID was accepted")
+
+	errors.append_array(machine.configure(&"Idle", _state_machine_fixture_table()))
+	machine.request_transition(&"Move")
+	var before_states := machine.known_states()
+	var invalid_reconfigure := machine.configure(
+		&"Idle",
+		{&"Idle": PackedStringArray(["Missing"])}
+	)
+	if invalid_reconfigure.is_empty():
+		errors.append("invalid reconfiguration unexpectedly succeeded")
+	if machine.current_state != &"Move" or machine.transition_count != 1:
+		errors.append("invalid reconfiguration changed runtime state")
+	if machine.known_states() != before_states:
+		errors.append("invalid reconfiguration replaced the valid transition table")
+	return errors
+
+
+func _test_state_machine_reset_and_terminal_stability() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var machine: StateMachineModel = StateMachineModelScript.new()
+	machine.configure(&"Idle", _state_machine_fixture_table())
+	machine.request_transition(&"Move")
+	machine.request_transition(&"Defeated")
+	if machine.current_state != &"Defeated":
+		errors.append("legal transition did not enter terminal Defeated state")
+	if not machine.allowed_targets_from(&"Defeated").is_empty():
+		errors.append("terminal state unexpectedly exposed outgoing targets")
+	for _tick: int in range(120):
+		var simulated_delta := 1.0 / 30.0 if _tick % 2 == 0 else 1.0 / 144.0
+		if simulated_delta <= 0.0:
+			errors.append("invalid simulated delta in state stability test")
+	if machine.current_state != &"Defeated" or machine.transition_count != 2:
+		errors.append("terminal state changed without an explicit transition request")
+	if machine.request_transition(&"Idle"):
+		errors.append("terminal state accepted a forbidden outgoing transition")
+	if not machine.reset():
+		errors.append("configured state machine reset was rejected")
+	if (
+		machine.current_state != &"Idle"
+		or machine.previous_state != &""
+		or machine.transition_count != 0
+	):
+		errors.append("reset did not restore the initial runtime state")
+	var weak_machine: WeakRef = weakref(machine)
+	machine = null
+	if weak_machine.get_ref() != null:
+		errors.append("state machine retained itself after its owner released it")
 	return errors
 
 

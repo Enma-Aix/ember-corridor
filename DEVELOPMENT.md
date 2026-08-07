@@ -8,6 +8,7 @@
 - M1 MOV-001 分支固定为 codex/m1-mov-001，并叠加在 M0 绿色提交上。
 - M1 MOV-002 分支固定为 codex/m1-mov-002，并叠加在 MOV-001 绿色提交上。
 - M1 MOV-003 分支固定为 codex/m1-mov-003，并叠加在 MOV-002 绿色提交上。
+- M1 CMB-001 分支固定为 codex/m1-cmb-001，并叠加在 MOV-003 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -61,3 +62,11 @@
 4. 确认 HUD 只在第 4 至 13 tick 显示 Invulnerable = true。
 5. 确认动作第 24 tick 结束，随后冷却从 45 减至 0 才可再次启动。
 6. 贴近四面边界反复闪避，确认 CharacterBody2D 不穿过 WorldStatic。
+
+## CMB-001 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 确认日志包含 `[StateMachineSandbox] CMB-001 core ready`，且无持续错误或警告。
+3. 运行 tests/test_runner.gd，确认合法转换、非法转换、无效配置和终止状态用例通过。
+4. 重复移动、跳跃、闪避验收，确认通用状态机尚未改变现有玩家操作行为。
+5. 检查状态机脚本不依赖动画、VFX、UI、音频或 Autoload。
