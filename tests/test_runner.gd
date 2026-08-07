@@ -28,6 +28,11 @@ const HitboxComponentScript := preload(
 const HurtboxComponentScript := preload(
 	"res://scripts/combat/hurtbox_component.gd"
 )
+const DamagePacketScript := preload("res://scripts/combat/damage_packet.gd")
+const HitResultScript := preload("res://scripts/combat/hit_result.gd")
+const DamageResolverModelScript := preload(
+	"res://scripts/combat/damage_resolver_model.gd"
+)
 
 var _case_results: Array[Dictionary] = []
 
@@ -74,7 +79,14 @@ func _run() -> void:
 	var area_contact_errors: PackedStringArray = await _test_hitbox_hurtbox_area_contact()
 	_record_case("Area2D contact forwards once across pause-like resume", area_contact_errors)
 	var sandbox_hitbox_errors: PackedStringArray = await _test_project_hitbox_sandbox()
-	_record_case("project sandbox wires debug hitboxes without damage", sandbox_hitbox_errors)
+	_record_case("project sandbox resolves preview damage without applying health", sandbox_hitbox_errors)
+	_record_case("attack definition validates its damage profile", _test_attack_damage_profile())
+	_record_case("damage packet is an immutable validated snapshot", _test_damage_packet_snapshot())
+	_record_case("damage formula handles baseline, rounding, and minimum", _test_damage_formula_baseline())
+	_record_case("damage formula clamps negative defense and handles boundaries", _test_damage_defense_boundaries())
+	_record_case("critical chance uses exact boundaries and a 60 percent cap", _test_damage_critical_boundaries())
+	_record_case("damage modifiers and rejected results are explicit", _test_damage_modifiers_and_rejections())
+	_record_case("damage resolution is deterministic, stateless, and releasable", _test_damage_determinism_and_lifecycle())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -760,6 +772,12 @@ func _make_test_attack() -> AttackDefinition:
 	attack.active_ticks = 3
 	attack.recovery_ticks = 11
 	attack.hit_stop_ticks = 3
+	attack.feedback_strength = "light"
+	attack.damage_coefficient = 1.0
+	attack.flat_damage = 10.0
+	attack.poise_damage = 12.0
+	attack.hit_tags = [&"damage.physical", &"attack.normal"]
+	attack.launch_profile = &"none"
 	attack.hitbox_size = Vector2(88.0, 44.0)
 	attack.hitbox_offset = Vector2(48.0, -22.0)
 	attack.min_hit_height = 0.0
@@ -1421,9 +1439,317 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 		await physics_frame
 	if contact_label == null or not contact_label.text.contains("Contacts: 2 accepted"):
 		errors.append("A1 sandbox attack did not contact both distinct training targets once")
+	elif (
+		not contact_label.text.contains("Damage: 2 resolved")
+		or not contact_label.text.contains("total 143")
+		or not contact_label.text.contains("range 55-88")
+		or not contact_label.text.contains("crit 0")
+	):
+		errors.append(
+			"accepted sandbox contacts did not resolve the 88 + 55 damage preview: %s"
+			% contact_label.text.replace("\n", " | ")
+		)
 	if hitbox != null and hitbox.contact_enabled:
 		errors.append("project hitbox remained enabled after the active phase")
 	sandbox.free()
+	return errors
+
+
+func _make_damage_packet(
+	attack: AttackDefinition = null,
+	new_base_attack: float = 100.0,
+	new_crit_chance: float = 0.05,
+	new_crit_damage_multiplier: float = 1.5,
+	new_critical_roll: float = 0.5,
+	new_direction: Vector2 = Vector2.RIGHT,
+	new_source_instance_id: int = 3001
+) -> DamagePacket:
+	var source_attack := attack if attack != null else _make_test_attack()
+	return DamagePacketScript.from_attack(
+		new_source_instance_id,
+		source_attack,
+		new_base_attack,
+		new_crit_chance,
+		new_crit_damage_multiplier,
+		new_critical_roll,
+		new_direction
+	)
+
+
+func _test_attack_damage_profile() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	errors.append_array(attack.validation_errors())
+	if (
+		not is_equal_approx(attack.damage_coefficient, 1.0)
+		or not is_equal_approx(attack.flat_damage, 10.0)
+		or not is_equal_approx(attack.poise_damage, 12.0)
+	):
+		errors.append("test attack damage numbers do not match the A1 baseline")
+	if attack.hit_tags != [&"damage.physical", &"attack.normal"]:
+		errors.append("test attack hit tags do not match the A1 baseline")
+	if attack.launch_profile != &"none" or attack.feedback_strength != "light":
+		errors.append("test attack launch or feedback profile is invalid")
+
+	attack.damage_coefficient = -0.01
+	if attack.validation_errors().is_empty():
+		errors.append("negative damage coefficient was accepted")
+	attack.damage_coefficient = 1.0
+	attack.flat_damage = -1.0
+	if attack.validation_errors().is_empty():
+		errors.append("negative flat damage was accepted")
+	attack.flat_damage = 10.0
+	attack.poise_damage = -1.0
+	if attack.validation_errors().is_empty():
+		errors.append("negative poise damage was accepted")
+	attack.poise_damage = 12.0
+	attack.hit_tags = [&"damage.physical", &"damage.physical"]
+	if attack.validation_errors().is_empty():
+		errors.append("duplicate hit tags were accepted")
+	attack.hit_tags = [&"damage.physical"]
+	attack.launch_profile = &""
+	if attack.validation_errors().is_empty():
+		errors.append("empty launch profile was accepted")
+	attack.launch_profile = &"none"
+	attack.feedback_strength = "invalid"
+	if attack.validation_errors().is_empty():
+		errors.append("unsupported feedback strength was accepted")
+	return errors
+
+
+func _test_damage_packet_snapshot() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	var packet := _make_damage_packet(attack)
+	if packet == null:
+		errors.append("valid AttackDefinition did not create a DamagePacket")
+		return errors
+	errors.append_array(packet.validation_errors())
+	attack.damage_coefficient = 9.0
+	attack.flat_damage = 999.0
+	attack.poise_damage = 999.0
+	attack.hit_tags.append(&"mutated.after_snapshot")
+	attack.feedback_strength = "heavy"
+	var exposed_tags := packet.hit_tags
+	exposed_tags.append("mutated.from_getter")
+	if (
+		not is_equal_approx(packet.coefficient, 1.0)
+		or not is_equal_approx(packet.flat_damage, 10.0)
+		or not is_equal_approx(packet.poise_damage, 12.0)
+		or packet.feedback_strength != &"light"
+		or packet.hit_tags != PackedStringArray(["damage.physical", "attack.normal"])
+	):
+		errors.append("DamagePacket changed after its source or returned tags were mutated")
+	if packet.direction != Vector2.RIGHT or packet.launch_profile != &"none":
+		errors.append("DamagePacket did not snapshot direction or launch profile")
+
+	var invalid_packet: DamagePacket = DamagePacketScript.new(
+		0,
+		&"",
+		-1.0,
+		-1.0,
+		-1.0,
+		-1.0,
+		PackedStringArray(["", ""]),
+		Vector2(2.0, 0.0),
+		&"",
+		-1.0,
+		0.5,
+		1.0,
+		-1,
+		&"invalid"
+	)
+	if invalid_packet.validation_errors().size() < 10:
+		errors.append("DamagePacket did not reject its invalid field boundaries")
+	if DamagePacketScript.from_attack(3001, null, 100.0, 0.05, 1.5, 0.5, Vector2.RIGHT) != null:
+		errors.append("null AttackDefinition created a DamagePacket")
+	return errors
+
+
+func _test_damage_formula_baseline() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var packet := _make_damage_packet()
+	var result := resolver.resolve(packet, 25.0)
+	if not result.accepted:
+		errors.append("valid baseline damage was rejected")
+	elif (
+		not is_equal_approx(result.raw_damage, 110.0)
+		or not is_equal_approx(result.defense_multiplier, 0.8)
+		or result.final_damage != 88
+		or result.critical
+	):
+		errors.append("100 attack + 10 flat against 25 defense did not resolve to 88")
+	errors.append_array(result.validation_errors())
+
+	var rounding_attack := _make_test_attack()
+	rounding_attack.damage_coefficient = 0.0
+	rounding_attack.flat_damage = 10.49
+	var rounded_down := resolver.resolve(_make_damage_packet(rounding_attack), 0.0)
+	if rounded_down.final_damage != 10:
+		errors.append("10.49 damage did not round down to 10")
+	rounding_attack.flat_damage = 10.51
+	var rounded_up := resolver.resolve(_make_damage_packet(rounding_attack), 0.0)
+	if rounded_up.final_damage != 11:
+		errors.append("10.51 damage did not round up to 11")
+
+	var minimum_attack := _make_test_attack()
+	minimum_attack.damage_coefficient = 0.0
+	minimum_attack.flat_damage = 0.0
+	var minimum_result := resolver.resolve(
+		_make_damage_packet(minimum_attack, 0.0),
+		1000000000.0,
+		PackedFloat64Array([0.0])
+	)
+	if minimum_result.final_damage != 1:
+		errors.append("formula did not enforce the one-damage minimum")
+	return errors
+
+
+func _test_damage_defense_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var packet := _make_damage_packet()
+	var negative_defense := resolver.resolve(packet, -250.0)
+	var zero_defense := resolver.resolve(packet, 0.0)
+	var equal_defense := resolver.resolve(packet, 100.0)
+	var huge_defense := resolver.resolve(packet, 1000000000.0)
+	if negative_defense.final_damage != 110 or zero_defense.final_damage != 110:
+		errors.append("negative defense was not clamped to the zero-defense result")
+	if equal_defense.final_damage != 55:
+		errors.append("100 defense did not produce the expected 0.5 multiplier")
+	if huge_defense.final_damage != 1:
+		errors.append("very large defense bypassed the one-damage minimum")
+	for invalid_defense: float in [NAN, INF, -INF]:
+		var rejected := resolver.resolve(packet, invalid_defense)
+		if (
+			rejected.accepted
+			or rejected.rejection_code != DamageResolverModel.REJECTION_INVALID_DEFENSE
+		):
+			errors.append("non-finite defense did not return invalid_defense")
+	return errors
+
+
+func _test_damage_critical_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	if (
+		not is_equal_approx(DamageResolverModel.DEFAULT_CRIT_CHANCE, 0.05)
+		or not is_equal_approx(DamageResolverModel.MAX_CRIT_CHANCE, 0.60)
+		or not is_equal_approx(DamageResolverModel.DEFAULT_CRIT_DAMAGE_MULTIPLIER, 1.5)
+	):
+		errors.append("documented default critical constants changed")
+	var inside_default := resolver.resolve(
+		_make_damage_packet(null, 100.0, 0.05, 1.5, 0.049999),
+		0.0
+	)
+	var at_default_end := resolver.resolve(
+		_make_damage_packet(null, 100.0, 0.05, 1.5, 0.05),
+		0.0
+	)
+	if not inside_default.critical or inside_default.final_damage != 165:
+		errors.append("critical roll inside the default 5 percent window did not crit")
+	if at_default_end.critical or at_default_end.final_damage != 110:
+		errors.append("critical roll at the exclusive 5 percent boundary crit")
+	var inside_cap := resolver.resolve(
+		_make_damage_packet(null, 100.0, 0.95, 1.5, 0.599999),
+		0.0
+	)
+	var at_cap_end := resolver.resolve(
+		_make_damage_packet(null, 100.0, 0.95, 1.5, 0.60),
+		0.0
+	)
+	if not inside_cap.critical or not is_equal_approx(inside_cap.effective_crit_chance, 0.60):
+		errors.append("critical chance above 60 percent did not clamp to the cap")
+	if at_cap_end.critical or not is_equal_approx(at_cap_end.effective_crit_chance, 0.60):
+		errors.append("critical roll at the exclusive 60 percent cap boundary crit")
+	return errors
+
+
+func _test_damage_modifiers_and_rejections() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var packet := _make_damage_packet()
+	var combined := resolver.resolve(
+		packet,
+		0.0,
+		PackedFloat64Array([1.25, 0.8])
+	)
+	if combined.final_damage != 110 or not is_equal_approx(combined.damage_modifier, 1.0):
+		errors.append("ordered damage modifiers did not combine multiplicatively")
+	if (
+		not is_equal_approx(combined.poise_damage, 12.0)
+		or combined.broke_poise
+		or combined.reaction_type != &"none"
+		or combined.knockback != Vector2.ZERO
+		or combined.hit_stop_ticks != 3
+		or combined.feedback_strength != &"light"
+	):
+		errors.append("HitResult did not carry deferred CMB-005/010 outcome fields")
+	errors.append_array(combined.validation_errors())
+	var zero_modifier := resolver.resolve(packet, 0.0, PackedFloat64Array([0.0]))
+	if zero_modifier.final_damage != 1:
+		errors.append("zero damage modifier bypassed the documented minimum")
+	for invalid_modifier: float in [-0.01, NAN, INF]:
+		var rejected := resolver.resolve(
+			packet,
+			0.0,
+			PackedFloat64Array([invalid_modifier])
+		)
+		if (
+			rejected.accepted
+			or rejected.rejection_code != DamageResolverModel.REJECTION_INVALID_MODIFIER
+			or not rejected.validation_errors().is_empty()
+		):
+			errors.append("invalid modifier did not produce a valid rejected HitResult")
+	var null_result := resolver.resolve(null, 0.0)
+	if (
+		null_result.accepted
+		or null_result.rejection_code != DamageResolverModel.REJECTION_INVALID_PACKET
+	):
+		errors.append("null packet did not return invalid_packet")
+	return errors
+
+
+func _test_damage_determinism_and_lifecycle() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: DamageResolverModel = DamageResolverModelScript.new()
+	var packet := _make_damage_packet(null, 100.0, 0.60, 1.5, 0.25)
+	var first_result := resolver.resolve(packet, 25.0, PackedFloat64Array([0.9]))
+	for simulated_frame: int in range(240):
+		var ignored_delta := 1.0 / 30.0 if simulated_frame % 2 == 0 else 1.0 / 144.0
+		if ignored_delta <= 0.0:
+			errors.append("invalid simulated frame delta")
+		var repeated := resolver.resolve(packet, 25.0, PackedFloat64Array([0.9]))
+		if (
+			repeated.final_damage != first_result.final_damage
+			or repeated.critical != first_result.critical
+		):
+			errors.append("same immutable inputs produced different damage across frames")
+			break
+	var defense_order_a := PackedFloat64Array([100.0, 25.0])
+	var defense_order_b := PackedFloat64Array([25.0, 100.0])
+	var results_a := PackedInt32Array()
+	var results_b := PackedInt32Array()
+	for defense: float in defense_order_a:
+		results_a.append(resolver.resolve(packet, defense).final_damage)
+	for defense: float in defense_order_b:
+		results_b.append(resolver.resolve(packet, defense).final_damage)
+	if results_a != PackedInt32Array([83, 132]) or results_b != PackedInt32Array([132, 83]):
+		errors.append("multi-target formulas depended on resolution order")
+
+	var weak_resolver: WeakRef = weakref(resolver)
+	var weak_packet: WeakRef = weakref(packet)
+	var weak_result: WeakRef = weakref(first_result)
+	resolver = null
+	packet = null
+	first_result = null
+	if (
+		weak_resolver.get_ref() != null
+		or weak_packet.get_ref() != null
+		or weak_result.get_ref() != null
+	):
+		errors.append("released damage formula objects remained alive")
 	return errors
 
 

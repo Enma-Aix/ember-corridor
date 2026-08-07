@@ -17,6 +17,14 @@ enum TimelinePhase {
 
 @export_category("Feedback")
 @export_range(0, 120, 1, "or_greater") var hit_stop_ticks := 0
+@export_enum("light", "medium", "heavy", "finisher") var feedback_strength := "light"
+
+@export_category("Damage")
+@export_range(0.0, 100.0, 0.01, "or_greater") var damage_coefficient := 1.0
+@export_range(0.0, 100000.0, 1.0, "or_greater") var flat_damage := 0.0
+@export_range(0.0, 100000.0, 1.0, "or_greater") var poise_damage := 0.0
+@export var hit_tags: Array[StringName] = []
+@export var launch_profile: StringName = &"none"
 
 @export_category("Hitbox")
 @export var hitbox_size := Vector2(88.0, 44.0)
@@ -40,6 +48,24 @@ func validation_errors() -> PackedStringArray:
 		errors.append("recovery_ticks must be at least 0")
 	if hit_stop_ticks < 0:
 		errors.append("hit_stop_ticks must be at least 0")
+	if feedback_strength not in ["light", "medium", "heavy", "finisher"]:
+		errors.append("feedback_strength must be light, medium, heavy, or finisher")
+	if not _is_finite_non_negative(damage_coefficient):
+		errors.append("damage_coefficient must be finite and at least 0")
+	if not _is_finite_non_negative(flat_damage):
+		errors.append("flat_damage must be finite and at least 0")
+	if not _is_finite_non_negative(poise_damage):
+		errors.append("poise_damage must be finite and at least 0")
+	if launch_profile == &"":
+		errors.append("launch_profile must not be empty")
+	var seen_hit_tags: Dictionary[StringName, bool] = {}
+	for hit_tag: StringName in hit_tags:
+		if hit_tag == &"":
+			errors.append("hit_tags must not contain an empty value")
+		elif seen_hit_tags.has(hit_tag):
+			errors.append("duplicate hit_tag: %s" % String(hit_tag))
+		else:
+			seen_hit_tags[hit_tag] = true
 	if hitbox_size.x <= 0.0 or hitbox_size.y <= 0.0:
 		errors.append("hitbox_size components must be greater than 0")
 	if min_hit_height < 0.0:
@@ -57,6 +83,10 @@ func validation_errors() -> PackedStringArray:
 		for message: String in cancel_window.validation_errors(duration):
 			errors.append("cancel_windows[%d]: %s" % [index, message])
 	return errors
+
+
+func _is_finite_non_negative(value: float) -> bool:
+	return not is_nan(value) and not is_inf(value) and value >= 0.0
 
 
 func total_ticks() -> int:

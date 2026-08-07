@@ -84,6 +84,9 @@ REQUIRED_FILES = (
     "scripts/combat/hit_resolver_model.gd",
     "scripts/combat/hitbox_component.gd",
     "scripts/combat/hurtbox_component.gd",
+    "scripts/combat/damage_packet.gd",
+    "scripts/combat/hit_result.gd",
+    "scripts/combat/damage_resolver_model.gd",
     "data/attacks/dev_a1.tres",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
@@ -93,6 +96,7 @@ REQUIRED_FILES = (
     "docs/M1-CMB-001-TEST-PLAN.md",
     "docs/M1-CMB-002-TEST-PLAN.md",
     "docs/M1-CMB-003-TEST-PLAN.md",
+    "docs/M1-CMB-004-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -123,6 +127,7 @@ def main() -> int:
     validate_state_machine_contract(errors)
     validate_attack_timeline_contract(errors)
     validate_hit_detection_contract(errors)
+    validate_damage_formula_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -623,6 +628,141 @@ def validate_hit_detection_contract(errors: list[str]) -> None:
             errors.append("CMB-003 sandbox does not emit its readiness marker")
 
 
+def validate_damage_formula_contract(errors: list[str]) -> None:
+    packet_path = ROOT / "scripts/combat/damage_packet.gd"
+    result_path = ROOT / "scripts/combat/hit_result.gd"
+    resolver_path = ROOT / "scripts/combat/damage_resolver_model.gd"
+    definition_path = ROOT / "scripts/data/attack_definition.gd"
+    resource_path = ROOT / "data/attacks/dev_a1.tres"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    core_paths = (packet_path, result_path, resolver_path)
+    if not all(path.is_file() for path in core_paths):
+        return
+
+    packet_text = packet_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name DamagePacket",
+        "extends RefCounted",
+        "var source_instance_id: int",
+        "var attack_id: StringName",
+        "var base_attack: float",
+        "var coefficient: float",
+        "var flat_damage: float",
+        "var poise_damage: float",
+        "var hit_tags: PackedStringArray",
+        "var direction: Vector2",
+        "var launch_profile: StringName",
+        "var crit_chance: float",
+        "var crit_damage_multiplier: float",
+        "var critical_roll: float",
+        "static func from_attack",
+        "func validation_errors",
+    ):
+        if marker not in packet_text:
+            errors.append(f"CMB-004 DamagePacket missing marker: {marker}")
+
+    result_text = result_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name HitResult",
+        "extends RefCounted",
+        "var accepted: bool",
+        "var rejection_code: StringName",
+        "var final_damage: int",
+        "var critical: bool",
+        "var broke_poise: bool",
+        "var reaction_type: StringName",
+        "var knockback: Vector2",
+        "var hit_stop_ticks: int",
+        "var feedback_strength: StringName",
+        "static func rejected",
+        "func validation_errors",
+    ):
+        if marker not in result_text:
+            errors.append(f"CMB-004 HitResult missing marker: {marker}")
+
+    resolver_text = resolver_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name DamageResolverModel",
+        "extends RefCounted",
+        "const DEFAULT_CRIT_CHANCE := 0.05",
+        "const MAX_CRIT_CHANCE := 0.60",
+        "const DEFAULT_CRIT_DAMAGE_MULTIPLIER := 1.5",
+        "REJECTION_INVALID_PACKET",
+        "REJECTION_INVALID_DEFENSE",
+        "REJECTION_INVALID_MODIFIER",
+        "func resolve",
+        "packet.base_attack * packet.coefficient + packet.flat_damage",
+        "100.0 / (100.0 + maxf(0.0, target_defense))",
+        "packet.critical_roll < effective_crit_chance",
+        "roundi(maxf(1.0, resolved_damage))",
+    ):
+        if marker not in resolver_text:
+            errors.append(f"CMB-004 DamageResolver missing marker: {marker}")
+
+    core_text = "\n".join((packet_text, result_text, resolver_text))
+    forbidden_dependencies = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|"
+        r"GameLog|RandomNumberGenerator)\b|\brand[fi]_range\b|\brand[fi]\b|"
+        r"get_node\s*\(|extends\s+(Node|Area2D)",
+        core_text,
+    )
+    if forbidden_dependencies:
+        errors.append(
+            "CMB-004 formula core depends on scene, presentation, or global RNG: "
+            f"{forbidden_dependencies.group(0)}"
+        )
+    forbidden_application = re.search(
+        r"\b(apply_damage|apply_status|current_health|current_poise|Combatant)\b",
+        core_text,
+        re.IGNORECASE,
+    )
+    if forbidden_application:
+        errors.append(
+            "CMB-004 formula core applies out-of-scope combat state: "
+            f"{forbidden_application.group(0)}"
+        )
+
+    if definition_path.is_file():
+        definition_text = definition_path.read_text(encoding="utf-8")
+        for marker in (
+            "var damage_coefficient",
+            "var flat_damage",
+            "var poise_damage",
+            "var hit_tags: Array[StringName]",
+            "var launch_profile: StringName",
+            "var feedback_strength",
+        ):
+            if marker not in definition_text:
+                errors.append(f"CMB-004 AttackDefinition missing marker: {marker}")
+
+    if resource_path.is_file():
+        resource_text = resource_path.read_text(encoding="utf-8")
+        for marker in (
+            "damage_coefficient = 1.0",
+            "flat_damage = 10.0",
+            "poise_damage = 12.0",
+            '&"damage.physical"',
+            '&"attack.normal"',
+            'launch_profile = &"none"',
+            'feedback_strength = "light"',
+        ):
+            if marker not in resource_text:
+                errors.append(f"CMB-004 placeholder attack missing marker: {marker}")
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'GameLog.info(&"DamageSandbox", "CMB-004 formula ready")',
+            "DamagePacketScript.from_attack",
+            "damage_resolver.resolve",
+            "_total_preview_damage",
+            "_minimum_preview_damage",
+            "_maximum_preview_damage",
+        ):
+            if marker not in sandbox_text:
+                errors.append(f"CMB-004 sandbox missing marker: {marker}")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -643,7 +783,7 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 42 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 49 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
@@ -651,6 +791,7 @@ def validate_workflow(errors: list[str]) -> None:
         'grep -Fq "[StateMachineSandbox] CMB-001 core ready"',
         'grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready"',
         'grep -Fq "[HitboxSandbox] CMB-003 hit detection ready"',
+        'grep -Fq "[DamageSandbox] CMB-004 formula ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:

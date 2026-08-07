@@ -9,7 +9,18 @@ const AttackTimelineModelScript := preload(
 const HitResolverModelScript := preload(
 	"res://scripts/combat/hit_resolver_model.gd"
 )
+const DamagePacketScript := preload("res://scripts/combat/damage_packet.gd")
+const DamageResolverModelScript := preload(
+	"res://scripts/combat/damage_resolver_model.gd"
+)
 const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
+
+const PREVIEW_BASE_ATTACK := 100.0
+const PREVIEW_CRIT_CHANCE := 0.05
+const PREVIEW_CRIT_MULTIPLIER := 1.5
+const PREVIEW_CRITICAL_ROLL := 0.5
+const DUMMY_A_DEFENSE := 25.0
+const DUMMY_B_DEFENSE := 100.0
 
 @onready var player: PlayerGroundMovementController = %PlayerRoot
 @onready var debug_panel: PanelContainer = %DebugPanel
@@ -37,10 +48,16 @@ var elevation_component: ElevationComponent
 var attack_definition: AttackDefinition
 var attack_timeline: AttackTimelineModel = AttackTimelineModelScript.new()
 var hit_resolver: HitResolverModel = HitResolverModelScript.new()
+var damage_resolver: DamageResolverModel = DamageResolverModelScript.new()
 var _attack_sequence := 0
 var _current_hit_id: StringName = &""
 var _accepted_contact_count := 0
 var _duplicate_contact_count := 0
+var _resolved_damage_count := 0
+var _total_preview_damage := 0
+var _minimum_preview_damage := 0
+var _maximum_preview_damage := 0
+var _critical_preview_count := 0
 
 
 func _ready() -> void:
@@ -53,6 +70,7 @@ func _ready() -> void:
 	_verify_state_machine_core()
 	_configure_attack_timeline_preview()
 	_configure_hit_detection_preview()
+	_configure_damage_preview()
 
 
 func _physics_process(_delta: float) -> void:
@@ -187,6 +205,23 @@ func _configure_hit_detection_preview() -> void:
 	GameLog.info(&"HitboxSandbox", "CMB-003 hit detection ready")
 
 
+func _configure_damage_preview() -> void:
+	var packet := _build_preview_damage_packet()
+	if packet == null:
+		push_error("[CMB-004] preview DamagePacket could not be created")
+		return
+	var packet_errors := packet.validation_errors()
+	if not packet_errors.is_empty():
+		for message: String in packet_errors:
+			push_error("[CMB-004] %s" % message)
+		return
+	var result := damage_resolver.resolve(packet, DUMMY_A_DEFENSE)
+	if not result.accepted or result.final_damage != 88:
+		push_error("[CMB-004] preview formula baseline did not resolve to 88")
+		return
+	GameLog.info(&"DamageSandbox", "CMB-004 formula ready")
+
+
 func _start_attack_hitbox() -> void:
 	_attack_sequence += 1
 	_current_hit_id = StringName(
@@ -221,8 +256,28 @@ func _sync_player_hurtbox() -> void:
 	player_hurtbox.set_invulnerable(player.is_dodge_invulnerable())
 
 
-func _on_hit_accepted(_contact: HitContact) -> void:
+func _on_hit_accepted(contact: HitContact) -> void:
 	_accepted_contact_count += 1
+	var packet := _build_preview_damage_packet()
+	if packet == null:
+		push_error("[CMB-004] accepted contact could not create a DamagePacket")
+		_update_hit_contact_label()
+		return
+	var result := damage_resolver.resolve(packet, _target_defense(contact))
+	if not result.accepted:
+		push_error("[CMB-004] damage resolution rejected: %s" % result.rejection_code)
+		_update_hit_contact_label()
+		return
+	_resolved_damage_count += 1
+	_total_preview_damage += result.final_damage
+	if _resolved_damage_count == 1:
+		_minimum_preview_damage = result.final_damage
+		_maximum_preview_damage = result.final_damage
+	else:
+		_minimum_preview_damage = mini(_minimum_preview_damage, result.final_damage)
+		_maximum_preview_damage = maxi(_maximum_preview_damage, result.final_damage)
+	if result.critical:
+		_critical_preview_count += 1
 	_update_hit_contact_label()
 
 
@@ -235,9 +290,38 @@ func _on_hit_rejected(_contact: HitContact, reason_code: StringName) -> void:
 func _update_hit_contact_label() -> void:
 	var display_hit_id := "idle" if _current_hit_id == &"" else String(_current_hit_id)
 	hit_contact_label.text = (
-		"Contacts: %d accepted · %d duplicate blocked · hit_id %s"
-		% [_accepted_contact_count, _duplicate_contact_count, display_hit_id]
+		"Contacts: %d accepted · %d duplicate blocked · hit_id %s\n"
+		+ "Damage: %d resolved · total %d · range %d-%d · crit %d"
+	) % [
+		_accepted_contact_count,
+		_duplicate_contact_count,
+		display_hit_id,
+		_resolved_damage_count,
+		_total_preview_damage,
+		_minimum_preview_damage,
+		_maximum_preview_damage,
+		_critical_preview_count,
+	]
+
+
+func _build_preview_damage_packet() -> DamagePacket:
+	return DamagePacketScript.from_attack(
+		player.get_instance_id(),
+		attack_definition,
+		PREVIEW_BASE_ATTACK,
+		PREVIEW_CRIT_CHANCE,
+		PREVIEW_CRIT_MULTIPLIER,
+		PREVIEW_CRITICAL_ROLL,
+		Vector2(float(player.facing_sign()), 0.0)
 	)
+
+
+func _target_defense(contact: HitContact) -> float:
+	if contact.target_instance_id == dummy_a_hurtbox.combatant_instance_id:
+		return DUMMY_A_DEFENSE
+	if contact.target_instance_id == dummy_b_hurtbox.combatant_instance_id:
+		return DUMMY_B_DEFENSE
+	return 0.0
 
 
 func _phase_segment_label(title: String, tick_range: Vector2i) -> String:
