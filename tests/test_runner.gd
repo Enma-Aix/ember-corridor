@@ -14,6 +14,7 @@ func _init() -> void:
 func _run() -> void:
 	_record_case("version is pinned to Godot 4.7.1", _test_version_pin())
 	_record_case("required input actions have keyboard and gamepad events", _test_input_actions())
+	_record_case("input device switching reacts to keyboard, mouse, and gamepad events", _test_input_device_switching())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -75,6 +76,66 @@ func _test_input_actions() -> PackedStringArray:
 			errors.append("%s has no keyboard binding" % String(action))
 		if not has_gamepad:
 			errors.append("%s has no gamepad binding" % String(action))
+	settings.free()
+	return errors
+
+
+func _test_input_device_switching() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var settings := SettingsServiceScript.new()
+
+	var joy_button := InputEventJoypadButton.new()
+	joy_button.button_index = JOY_BUTTON_A
+	joy_button.pressed = true
+	settings._input(joy_button)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.GAMEPAD:
+		errors.append("pressed gamepad button did not select the gamepad")
+	if settings.active_input_device_label() != "XInput gamepad":
+		errors.append("gamepad label did not match the active device")
+
+	var echo_key := InputEventKey.new()
+	echo_key.physical_keycode = KEY_A
+	echo_key.pressed = true
+	echo_key.echo = true
+	settings._input(echo_key)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.GAMEPAD:
+		errors.append("echoed keyboard event incorrectly changed the active device")
+
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_A
+	key.pressed = true
+	settings._input(key)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.KEYBOARD_MOUSE:
+		errors.append("pressed keyboard key did not select keyboard/mouse")
+
+	var weak_joy_motion := InputEventJoypadMotion.new()
+	weak_joy_motion.axis = JOY_AXIS_LEFT_X
+	weak_joy_motion.axis_value = 0.2
+	settings._input(weak_joy_motion)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.KEYBOARD_MOUSE:
+		errors.append("sub-deadzone stick motion incorrectly selected the gamepad")
+
+	var strong_joy_motion := InputEventJoypadMotion.new()
+	strong_joy_motion.axis = JOY_AXIS_LEFT_X
+	strong_joy_motion.axis_value = 0.75
+	settings._input(strong_joy_motion)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.GAMEPAD:
+		errors.append("strong stick motion did not select the gamepad")
+
+	var small_mouse_motion := InputEventMouseMotion.new()
+	small_mouse_motion.relative = Vector2(1.0, 1.0)
+	settings._input(small_mouse_motion)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.GAMEPAD:
+		errors.append("tiny mouse motion incorrectly changed the active device")
+
+	var mouse_motion := InputEventMouseMotion.new()
+	mouse_motion.relative = Vector2(3.0, 0.0)
+	settings._input(mouse_motion)
+	if settings.active_input_device != SettingsServiceScript.InputDevice.KEYBOARD_MOUSE:
+		errors.append("meaningful mouse motion did not select keyboard/mouse")
+	if settings.active_input_device_label() != "Keyboard / mouse":
+		errors.append("keyboard/mouse label did not match the active device")
+
 	settings.free()
 	return errors
 

@@ -179,6 +179,11 @@ def validate_workflow(errors: list[str]) -> None:
         '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
         'grep -Fq "[DataRegistry] Loaded 1 definition(s)"',
         "actions/upload-artifact@v4",
+        "runs-on: windows-latest",
+        "Godot_v4.7.1-stable_win64.exe",
+        "actions/download-artifact@v4",
+        "M0 TEST SUMMARY: 10 passed, 0 failed",
+        "Run exported game natively",
     ):
         if marker not in text:
             errors.append(f"CI workflow missing step marker: {marker}")

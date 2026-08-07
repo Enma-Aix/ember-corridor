@@ -91,4 +91,169 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# CI retrigger after GitHub connection verification.
+  windows-native-test:
+    name: Run tests and exported game natively on Windows
+    needs: validate-test-export
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run repository static validation
+        run: python tools/validate_project.py
+
+      - name: Download Godot 4.7.1 for Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "godot-windows.zip"
+          $destination = Join-Path $env:RUNNER_TEMP "godot-windows"
+          Invoke-WebRequest `
+            -Uri "https://downloads.godotengine.org/?flavor=stable&platform=windows.64&slug=win64.exe.zip&version=4.7.1" `
+            -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $destination -Force
+          $downloadedGodot = Get-ChildItem `
+            -Path $destination `
+            -Filter "Godot_v4.7.1-stable_win64.exe" `
+            -File `
+            -Recurse `
+            | Select-Object -First 1
+          if ($null -eq $downloadedGodot) {
+            throw "Godot 4.7.1 Windows executable was not found in the archive"
+          }
+          $godot = Join-Path $env:RUNNER_TEMP "godot.exe"
+          Copy-Item $downloadedGodot.FullName $godot
+          & $godot --version 2>&1 | Tee-Object -FilePath build-godot-windows-version.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Godot --version failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String -Path build-godot-windows-version.txt -Pattern "^4\.7\.1\.stable" -Quiet)) {
+            throw "Downloaded Windows Godot version is not 4.7.1 Stable"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP
+
+      - name: Import project natively on Windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/test-results/windows | Out-Null
+          & godot.exe --headless --path . --import --quit 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/import.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows project import failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Validate Resource data natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --script res://scripts/tools/validate_data.gd 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/data-validation.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows Resource validation failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Run game tests natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --script res://tests/test_runner.gd 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/game-tests.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows game tests failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/game-tests.txt `
+            -Pattern "M0 TEST SUMMARY: 10 passed, 0 failed" `
+            -Quiet)) {
+            throw "Windows game-test summary was not found"
+          }
+
+      - name: Smoke-test the boot scene natively on Windows
+        shell: pwsh
+        run: |
+          & godot.exe --headless --path . --quit-after 120 2>&1 `
+            | Tee-Object -FilePath build/test-results/windows/project-boot.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows project boot failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[DataRegistry] Loaded 1 definition(s)" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not initialize DataRegistry"
+          }
+
+      - name: Download Windows Debug artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ember-corridor-windows-debug
+          path: build/windows-artifact
+
+      - name: Run exported game natively
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Get-ChildItem `
+            -Path build/windows-artifact `
+            -Filter "EmberCorridor.exe" `
+            -File `
+            -Recurse `
+            | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "EmberCorridor.exe was not found in the downloaded artifact"
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)
+          if ($bytes.Length -lt 256 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            throw "Exported artifact is not a Windows PE executable"
+          }
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x8664) {
+            throw ("Unexpected PE machine type: 0x{0:X4}" -f $machine)
+          }
+
+          $stdout = Join-Path $PWD "build/test-results/windows/exported-game.stdout.txt"
+          $stderr = Join-Path $PWD "build/test-results/windows/exported-game.stderr.txt"
+          $process = Start-Process `
+            -FilePath $exe.FullName `
+            -ArgumentList @("--headless", "--quit-after", "120") `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Exported Windows game did not exit within 30 seconds"
+          }
+          $process.WaitForExit()
+          Get-Content $stdout
+          if ((Test-Path $stderr) -and (Get-Item $stderr).Length -gt 0) {
+            Get-Content $stderr
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Exported Windows game exited with code $($process.ExitCode)"
+          }
+
+          $combinedLog = (Get-Content $stdout -Raw) + "`n" + (Get-Content $stderr -Raw)
+          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 1 definition\(s\)") {
+            throw "Exported Windows game did not initialize DataRegistry"
+          }
+          if ($combinedLog -notmatch "\[App\] Foundation services initialized") {
+            throw "Exported Windows game did not finish service initialization"
+          }
+
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "Executable: $($exe.FullName)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt
+          "Bytes: $($exe.Length)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+          "SHA256: $hash" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+          "PE machine: x86-64 (0x8664)" | Tee-Object -FilePath build/test-results/windows/exported-game-metadata.txt -Append
+
+      - name: Upload Windows-native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m0-windows-native-test-reports
+          path: build/test-results/windows/
+          if-no-files-found: error
+          retention-days: 14
