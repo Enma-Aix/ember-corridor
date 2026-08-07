@@ -14,6 +14,15 @@ const SUPPORTED_STRATEGIES := [&"normal", &"elite", &"boss"]
 @export_range(0.0, 1.0, 0.05) var post_break_poise_damage_multiplier := 0.5
 @export var forced_break_tags: Array[StringName] = []
 
+@export_category("Airborne Control")
+@export var can_be_launched := true
+@export_range(1.0, 10000.0, 1.0, "or_greater") var juggle_gravity := 1800.0
+@export_range(0.01, 100.0, 0.01, "or_greater") var juggle_resistance_per_air_hit := 1.0
+@export_range(0.0, 10.0, 0.01, "or_greater") var juggle_gravity_multiplier_per_resistance := 0.25
+@export_range(1.0, 10.0, 0.05, "or_greater") var juggle_maximum_gravity_multiplier := 2.5
+@export_range(0.0, 1.0, 0.01) var juggle_launch_reduction_per_resistance := 0.15
+@export_range(0.01, 1.0, 0.01) var juggle_minimum_launch_multiplier := 0.35
+
 
 func definition_kind() -> StringName:
 	return &"combat_reaction_profile"
@@ -41,6 +50,32 @@ func validation_errors() -> PackedStringArray:
 		or post_break_poise_damage_multiplier > 1.0
 	):
 		errors.append("post_break_poise_damage_multiplier must be in [0, 1]")
+	if not _is_finite(juggle_gravity) or juggle_gravity <= 0.0:
+		errors.append("juggle_gravity must be finite and greater than 0")
+	if (
+		not _is_finite(juggle_resistance_per_air_hit)
+		or juggle_resistance_per_air_hit <= 0.0
+	):
+		errors.append("juggle_resistance_per_air_hit must be finite and greater than 0")
+	if not _is_finite_non_negative(juggle_gravity_multiplier_per_resistance):
+		errors.append("juggle_gravity_multiplier_per_resistance must be finite and at least 0")
+	if (
+		not _is_finite(juggle_maximum_gravity_multiplier)
+		or juggle_maximum_gravity_multiplier < 1.0
+	):
+		errors.append("juggle_maximum_gravity_multiplier must be finite and at least 1")
+	if (
+		not _is_finite(juggle_launch_reduction_per_resistance)
+		or juggle_launch_reduction_per_resistance < 0.0
+		or juggle_launch_reduction_per_resistance > 1.0
+	):
+		errors.append("juggle_launch_reduction_per_resistance must be in [0, 1]")
+	if (
+		not _is_finite(juggle_minimum_launch_multiplier)
+		or juggle_minimum_launch_multiplier <= 0.0
+		or juggle_minimum_launch_multiplier > 1.0
+	):
+		errors.append("juggle_minimum_launch_multiplier must be in (0, 1]")
 	var seen_tags: Dictionary[StringName, bool] = {}
 	for forced_tag: StringName in forced_break_tags:
 		if forced_tag == &"":

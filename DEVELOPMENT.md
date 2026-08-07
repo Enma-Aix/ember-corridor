@@ -13,6 +13,7 @@
 - M1 CMB-003 分支固定为 codex/m1-cmb-003，并叠加在 CMB-002 绿色提交上。
 - M1 CMB-004 分支固定为 codex/m1-cmb-004，并叠加在 CMB-003 绿色提交上。
 - M1 CMB-005 分支固定为 codex/m1-cmb-005，并叠加在 CMB-004 绿色提交上。
+- M1 CMB-006 分支固定为 codex/m1-cmb-006，并叠加在 CMB-005 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -114,3 +115,15 @@
 6. 运行 tests/test_runner.gd，确认普通、精英、首领策略、破防边界、恢复、失败、事务性和释放用例通过。
 7. 暂停与恢复场景，确认显式 fixed tick 以外的渲染帧不推进生命、韧性、恢复或反应计时器。
 8. 确认 CMB-003 接触层和 CMB-004 公式层保持无状态；只有 CombatantModel.apply_damage 修改目标状态。
+
+## CMB-006 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn，确认日志包含 `[JuggleSandbox] CMB-006 airborne control ready`。
+2. 面向训练目标使用 J / XInput X，确认普通目标升空，精英目标保持地面；HUD 显示普通目标的 Air 与 JR。
+3. 在普通目标空中时继续命中，确认每次命中增加 JR，后续浮空幅度降低且下落加快。
+4. 确认连续空中控制在第 210 个 fixed tick 强制落地，并进入完整 30 tick 倒地窗口。
+5. 运行 tests/test_runner.gd，确认倒地窗口最多一次显式地面追击，普通倒地命中与第二次追击均返回稳定拒绝码。
+6. 暂停场景，确认没有 fixed tick 时高度、抗性、浮空与倒地计时不推进；恢复后继续。
+7. 确认破防和目标失效会清空浮空状态，普通/精英/首领原有生命、韧性和破防策略保持不变。
+8. 确认测试汇总为 `PROJECT TEST SUMMARY: 64 passed, 0 failed`，且静态校验、数据校验、主场景与 PCK 启动均无 Godot 错误。
+9. 检查 GitHub Actions 的 Windows 原生作业：项目导入、64 项测试、场景启动和导出 EXE 实际启动全部通过。

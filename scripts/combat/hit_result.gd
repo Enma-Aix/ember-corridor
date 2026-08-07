@@ -43,6 +43,15 @@ var hit_stop_ticks: int:
 var feedback_strength: StringName:
 	get:
 		return _feedback_strength
+var launch_velocity: float:
+	get:
+		return _launch_velocity
+var juggle_resistance: float:
+	get:
+		return _juggle_resistance
+var ground_pursuit_consumed: bool:
+	get:
+		return _ground_pursuit_consumed
 
 var _accepted: bool
 var _rejection_code: StringName
@@ -58,6 +67,9 @@ var _reaction_type: StringName
 var _knockback: Vector2
 var _hit_stop_ticks: int
 var _feedback_strength: StringName
+var _launch_velocity: float
+var _juggle_resistance: float
+var _ground_pursuit_consumed: bool
 
 
 func _init(
@@ -74,7 +86,10 @@ func _init(
 	new_reaction_type: StringName,
 	new_knockback: Vector2,
 	new_hit_stop_ticks: int,
-	new_feedback_strength: StringName
+	new_feedback_strength: StringName,
+	new_launch_velocity: float = 0.0,
+	new_juggle_resistance: float = 0.0,
+	new_ground_pursuit_consumed: bool = false
 ) -> void:
 	_accepted = new_accepted
 	_rejection_code = new_rejection_code
@@ -90,6 +105,9 @@ func _init(
 	_knockback = new_knockback
 	_hit_stop_ticks = new_hit_stop_ticks
 	_feedback_strength = new_feedback_strength
+	_launch_velocity = new_launch_velocity
+	_juggle_resistance = new_juggle_resistance
+	_ground_pursuit_consumed = new_ground_pursuit_consumed
 
 
 static func rejected(reason_code: StringName) -> HitResult:
@@ -115,7 +133,10 @@ func with_application_outcome(
 	new_poise_damage: float,
 	new_broke_poise: bool,
 	new_reaction_type: StringName,
-	new_knockback: Vector2
+	new_knockback: Vector2,
+	new_launch_velocity: float = 0.0,
+	new_juggle_resistance: float = 0.0,
+	new_ground_pursuit_consumed: bool = false
 ) -> HitResult:
 	if not accepted:
 		return HitResult.rejected(rejection_code)
@@ -133,7 +154,10 @@ func with_application_outcome(
 		new_reaction_type,
 		new_knockback,
 		hit_stop_ticks,
-		feedback_strength
+		feedback_strength,
+		new_launch_velocity,
+		new_juggle_resistance,
+		new_ground_pursuit_consumed
 	)
 
 
@@ -163,10 +187,29 @@ func validation_errors() -> PackedStringArray:
 			or is_inf(knockback.y)
 		):
 			errors.append("knockback components must be finite")
+		if is_nan(launch_velocity) or is_inf(launch_velocity) or launch_velocity < 0.0:
+			errors.append("launch_velocity must be finite and at least 0")
+		if (
+			is_nan(juggle_resistance)
+			or is_inf(juggle_resistance)
+			or juggle_resistance < 0.0
+		):
+			errors.append("juggle_resistance must be finite and at least 0")
+		if launch_velocity > 0.0 and reaction_type != &"airborne":
+			errors.append("positive launch_velocity requires the airborne reaction")
+		if ground_pursuit_consumed and reaction_type != &"knockdown":
+			errors.append("ground pursuit consumption requires the knockdown reaction")
 		if hit_stop_ticks < 0:
 			errors.append("hit_stop_ticks must be at least 0")
 	elif rejection_code == &"":
 		errors.append("rejected result must contain a rejection_code")
-	elif final_damage != 0 or critical or broke_poise:
+	elif (
+		final_damage != 0
+		or critical
+		or broke_poise
+		or launch_velocity != 0.0
+		or juggle_resistance != 0.0
+		or ground_pursuit_consumed
+	):
 		errors.append("rejected result must not contain applied combat outcomes")
 	return errors

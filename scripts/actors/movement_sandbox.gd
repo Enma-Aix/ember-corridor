@@ -14,7 +14,7 @@ const DamageResolverModelScript := preload(
 	"res://scripts/combat/damage_resolver_model.gd"
 )
 const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
-const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
+const PreviewAttackDefinition := preload("res://data/attacks/dev_launcher.tres")
 const PreviewNormalReactionProfile := preload(
 	"res://data/combat/reaction_profiles/normal.tres"
 )
@@ -23,6 +23,12 @@ const PreviewEliteReactionProfile := preload(
 )
 const PreviewBossReactionProfile := preload(
 	"res://data/combat/reaction_profiles/boss.tres"
+)
+const PreviewLauncherProfile := preload(
+	"res://data/combat/launch_profiles/dev_launcher.tres"
+)
+const PreviewGroundPursuitProfile := preload(
+	"res://data/combat/launch_profiles/dev_ground_pursuit.tres"
 )
 
 const PREVIEW_BASE_ATTACK := 100.0
@@ -34,6 +40,8 @@ const DUMMY_B_DEFENSE := 100.0
 const DUMMY_MAXIMUM_HEALTH := 300
 const DUMMY_A_MAXIMUM_POISE := 24.0
 const DUMMY_B_MAXIMUM_POISE := 12.0
+const DUMMY_MINIMUM_HIT_HEIGHT := 0.0
+const DUMMY_MAXIMUM_HIT_HEIGHT := 56.0
 
 @onready var player: PlayerGroundMovementController = %PlayerRoot
 @onready var debug_panel: PanelContainer = %DebugPanel
@@ -66,12 +74,15 @@ var _attack_sequence := 0
 var _current_hit_id: StringName = &""
 var _accepted_contact_count := 0
 var _duplicate_contact_count := 0
+var _control_rejection_count := 0
 var _resolved_damage_count := 0
 var _total_preview_damage := 0
 var _minimum_preview_damage := 0
 var _maximum_preview_damage := 0
 var _critical_preview_count := 0
 var _combatants: Dictionary[int, CombatantModel] = {}
+var _launch_profiles: Dictionary[StringName, CombatLaunchProfile] = {}
+var _dummy_visual_base_y: Dictionary[int, float] = {}
 
 
 func _ready() -> void:
@@ -292,10 +303,23 @@ func _configure_combatant_preview() -> void:
 	):
 		push_error("[CMB-005] reaction profiles did not preserve their strategies")
 		return
+	if (
+		not normal_combatant.can_be_launched
+		or elite_combatant.can_be_launched
+		or boss_contract.can_be_launched
+	):
+		push_error("[CMB-006] reaction profiles do not preserve launch immunity")
+		return
 	_combatants[normal_combatant.instance_id] = normal_combatant
 	_combatants[elite_combatant.instance_id] = elite_combatant
+	if not _configure_launch_profiles():
+		return
+	_capture_dummy_visual(normal_combatant.instance_id, dummy_a_hurtbox)
+	_capture_dummy_visual(elite_combatant.instance_id, dummy_b_hurtbox)
+	_sync_combatant_presentation()
 	_update_hit_contact_label()
 	GameLog.info(&"CombatantSandbox", "CMB-005 combatant reactions ready")
+	GameLog.info(&"JuggleSandbox", "CMB-006 airborne control ready")
 
 
 func _start_attack_hitbox() -> void:
@@ -349,10 +373,18 @@ func _on_hit_accepted(contact: HitContact) -> void:
 		push_error("[CMB-004] damage resolution rejected: %s" % result.rejection_code)
 		_update_hit_contact_label()
 		return
-	var applied_result := target.apply_damage(packet, result)
+	var launch_profile := _launch_profile_for_packet(packet)
+	var applied_result := target.apply_damage(packet, result, launch_profile)
 	if not applied_result.accepted:
+		if applied_result.rejection_code in [
+			CombatantModel.REJECTION_TARGET_KNOCKDOWN_PROTECTED,
+			CombatantModel.REJECTION_GROUND_PURSUIT_LIMIT,
+		]:
+			_control_rejection_count += 1
+			_update_hit_contact_label()
+			return
 		push_error(
-			"[CMB-005] combatant application rejected: %s"
+			"[CMB-005/006] combatant application rejected: %s"
 			% applied_result.rejection_code
 		)
 		_update_hit_contact_label()
@@ -383,12 +415,13 @@ func _on_hit_rejected(_contact: HitContact, reason_code: StringName) -> void:
 func _update_hit_contact_label() -> void:
 	var display_hit_id := "idle" if _current_hit_id == &"" else String(_current_hit_id)
 	hit_contact_label.text = (
-		"Contacts: %d accepted · %d duplicate blocked · hit_id %s\n"
+		"Contacts: %d accepted · %d duplicate blocked · %d control blocked · hit_id %s\n"
 		+ "Damage: %d resolved · total %d · range %d-%d · crit %d\n"
 		+ "%s"
 	) % [
 		_accepted_contact_count,
 		_duplicate_contact_count,
+		_control_rejection_count,
 		display_hit_id,
 		_resolved_damage_count,
 		_total_preview_damage,
@@ -415,7 +448,57 @@ func _advance_combatant_preview() -> void:
 	for combatant: CombatantModel in _combatants.values():
 		combatant.advance_tick()
 	if not _combatants.is_empty():
+		_sync_combatant_presentation()
 		_update_hit_contact_label()
+
+
+func _configure_launch_profiles() -> bool:
+	for source: Resource in [PreviewLauncherProfile, PreviewGroundPursuitProfile]:
+		var profile := source as CombatLaunchProfile
+		if profile == null:
+			push_error("[CMB-006] preview launch profile could not be loaded")
+			return false
+		var errors := profile.validation_errors()
+		if not errors.is_empty():
+			for message: String in errors:
+				push_error("[CMB-006] launch profile: %s" % message)
+			return false
+		_launch_profiles[profile.definition_id] = profile
+	return true
+
+
+func _launch_profile_for_packet(packet: DamagePacket) -> CombatLaunchProfile:
+	if packet == null or packet.launch_profile == &"none":
+		return null
+	return _launch_profiles.get(packet.launch_profile) as CombatLaunchProfile
+
+
+func _capture_dummy_visual(target_instance_id: int, hurtbox: HurtboxComponent) -> void:
+	if hurtbox == null:
+		return
+	var target_root := hurtbox.get_parent() as Node2D
+	var body := target_root.get_node_or_null("Body") as Node2D
+	if body != null:
+		_dummy_visual_base_y[target_instance_id] = body.position.y
+
+
+func _sync_combatant_presentation() -> void:
+	for target_instance_id: int in _combatants:
+		var combatant: CombatantModel = _combatants[target_instance_id]
+		var hurtbox := _target_hurtbox(target_instance_id)
+		if hurtbox == null:
+			continue
+		var height_range := combatant.hit_height_range(
+			DUMMY_MINIMUM_HIT_HEIGHT,
+			DUMMY_MAXIMUM_HIT_HEIGHT
+		)
+		hurtbox.set_hit_height_range(height_range.x, height_range.y)
+		var target_root := hurtbox.get_parent() as Node2D
+		var body := target_root.get_node_or_null("Body") as Node2D
+		if body != null and _dummy_visual_base_y.has(target_instance_id):
+			body.position.y = (
+				_dummy_visual_base_y[target_instance_id] - combatant.elevation
+			)
 
 
 func _target_hurtbox(target_instance_id: int) -> HurtboxComponent:
@@ -430,21 +513,25 @@ func _combatant_preview_summary() -> String:
 	var normal: CombatantModel = _combatants.get(dummy_a_hurtbox.combatant_instance_id)
 	var elite: CombatantModel = _combatants.get(dummy_b_hurtbox.combatant_instance_id)
 	if normal == null or elite == null:
-		return "Targets: awaiting CMB-005 setup"
+		return "Targets: awaiting CMB-005/006 setup"
 	return (
-		"Targets: Normal HP %d/%d · Poise %.1f/%.1f · %s | "
-		+ "Elite HP %d/%d · Poise %.1f/%.1f · %s"
+		"Targets: Normal HP %d/%d · Poise %.1f/%.1f · %s · Air %.1f · JR %.1f | "
+		+ "Elite HP %d/%d · Poise %.1f/%.1f · %s · Air %.1f · JR %.1f"
 	) % [
 		normal.current_health,
 		normal.maximum_health,
 		normal.current_poise,
 		normal.maximum_poise,
 		String(normal.reaction_type),
+		normal.elevation,
+		normal.juggle_resistance,
 		elite.current_health,
 		elite.maximum_health,
 		elite.current_poise,
 		elite.maximum_poise,
 		String(elite.reaction_type),
+		elite.elevation,
+		elite.juggle_resistance,
 	]
 
 

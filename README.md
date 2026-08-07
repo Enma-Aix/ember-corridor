@@ -1,6 +1,6 @@
 # 余烬回廊（Ember Corridor）
 
-原创、完全离线的 2D 横版卷轴动作 RPG。M0、MOV-001/002/003 与 CMB-001/002/003/004 已完成；当前分支实现 M1 的 CMB-005 生命、韧性、破防与普通/精英/首领受击策略，不包含浮空、正式敌人 AI、关卡或高保真 UI。
+原创、完全离线的 2D 横版卷轴动作 RPG。M0、MOV-001/002/003 与 CMB-001/002/003/004/005 已完成；当前分支实现 M1 的 CMB-006 浮空、倒地与反无限连规则，不包含输入缓冲、正式敌人 AI、关卡或高保真 UI。
 
 ## 固定技术基线
 
@@ -19,8 +19,8 @@
 1. 从 Godot 官方归档下载 Godot 4.7.1 Standard。
 2. 在 Godot Project Manager 中导入本目录的 project.godot。
 3. 确认右上角渲染器为 Compatibility。
-4. 按 F5 启动 M1 移动、跳跃、闪避、命中、伤害与受击反应沙盒。
-5. 使用 WASD / 左摇杆移动、K / XInput A 跳跃、L / XInput B 闪避、J / XInput X 启动 A1 判定并应用生命/韧性结果。
+4. 按 F5 启动 M1 移动、跳跃、闪避、命中、伤害与浮空控制沙盒。
+5. 使用 WASD / 左摇杆移动、K / XInput A 跳跃、L / XInput B 闪避、J / XInput X 启动 A1，并观察普通目标浮空与精英目标免疫。
 
 键盘默认映射：
 
@@ -71,9 +71,11 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - 负防御按 0 处理；默认暴击率 5%、上限 60%、默认倍率 1.5；无随机浮动并在最终取整前计算暴击。
 - CMB-005：CombatantModel 应用生命与韧性，普通目标直接受击，精英保留动作至破防，首领只在特定标签或韧性归零时破防。
 - 韧性伤害后 180 tick 开始恢复；破防结束回满并获得 60 tick 可配置减伤；失败为不可重复触发的终止状态。
-- 正常、边界、无效输入、真实墙体、状态转换、攻击时间线、命中接触、伤害公式与三类受击策略自动化测试。
+- CMB-006：普通目标可浮空，每次空中命中增加抗性，使后续浮空降低、下落加快；精英与首领默认浮空免疫。
+- 连续空中控制最多 210 tick；落地后倒地 30 tick，期间最多接受一次显式地面追击。
+- 正常、边界、无效输入、真实墙体、状态转换、攻击时间线、命中接触、伤害公式、三类受击策略与浮空控制共 64 项自动化测试。
 
-详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md、docs/M1-MOV-002-TEST-PLAN.md、docs/M1-MOV-003-TEST-PLAN.md、docs/M1-CMB-001-TEST-PLAN.md、docs/M1-CMB-002-TEST-PLAN.md、docs/M1-CMB-003-TEST-PLAN.md、docs/M1-CMB-004-TEST-PLAN.md 与 docs/M1-CMB-005-TEST-PLAN.md。
+详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md、docs/M1-MOV-002-TEST-PLAN.md、docs/M1-MOV-003-TEST-PLAN.md、docs/M1-CMB-001-TEST-PLAN.md、docs/M1-CMB-002-TEST-PLAN.md、docs/M1-CMB-003-TEST-PLAN.md、docs/M1-CMB-004-TEST-PLAN.md、docs/M1-CMB-005-TEST-PLAN.md 与 docs/M1-CMB-006-TEST-PLAN.md。
 
 ## M0 完成范围
 
@@ -86,7 +88,7 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - FND-007：Windows Debug 导出预设与 GitHub Actions 构建产物。
 - FND-008：Godot 许可说明和第三方资产登记表。
 
-完整冻结方案位于项目交接文档。下一项玩家战斗基础为 CMB-006 浮空、倒地与反无限连。
+完整冻结方案位于项目交接文档。下一项玩家战斗基础为 CMB-007 输入缓冲与取消窗执行。
 
 ## 版权边界
 

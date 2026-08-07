@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="CombatLaunchProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/combat_launch_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+definition_id = &"combat.launch.dev_ground_pursuit"
+display_name_key = &"combat.launch.dev_ground_pursuit.name"
+tags = Array[StringName]([&"placeholder", &"control.ground_pursuit"])
+upward_velocity = 0.0
+can_hit_downed = true
