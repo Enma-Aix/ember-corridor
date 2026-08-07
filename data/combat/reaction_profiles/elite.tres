@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CombatReactionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/combat_reaction_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+definition_id = &"combat.reaction.elite"
+display_name_key = &"combat.reaction.elite.name"
+tags = Array[StringName]([&"reaction.elite"])
+strategy = "elite"
+react_on_health_hit = false
+hit_reaction_ticks = 0
+break_duration_ticks = 90
+hit_knockback = 0.0
+break_knockback = 32.0
+poise_recovery_per_tick = 0.75
+post_break_poise_damage_multiplier = 0.5
+forced_break_tags = Array[StringName]([])
