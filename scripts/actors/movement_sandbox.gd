@@ -3,21 +3,48 @@ extends Node2D
 const StateMachineModelScript := preload(
 	"res://scripts/combat/state_machine_model.gd"
 )
+const AttackTimelineModelScript := preload(
+	"res://scripts/combat/attack_timeline_model.gd"
+)
+const PreviewAttackDefinition := preload("res://data/attacks/dev_a1.tres")
 
 @onready var player: PlayerGroundMovementController = %PlayerRoot
 @onready var debug_panel: PanelContainer = %DebugPanel
 @onready var movement_label: Label = %MovementLabel
+@onready var attack_timeline_panel: PanelContainer = %AttackTimelinePanel
+@onready var startup_segment: PanelContainer = %StartupSegment
+@onready var startup_label: Label = %StartupLabel
+@onready var active_segment: PanelContainer = %ActiveSegment
+@onready var active_label: Label = %ActiveLabel
+@onready var recovery_segment: PanelContainer = %RecoverySegment
+@onready var recovery_label: Label = %RecoveryLabel
+@onready var timeline_status_label: Label = %TimelineStatusLabel
+@onready var cancel_windows_label: Label = %CancelWindowsLabel
 
 var elevation_component: ElevationComponent
+var attack_definition: AttackDefinition
+var attack_timeline: AttackTimelineModel = AttackTimelineModelScript.new()
 
 
 func _ready() -> void:
 	elevation_component = player.get_node("Elevation") as ElevationComponent
 	debug_panel.visible = OS.is_debug_build()
+	attack_timeline_panel.visible = OS.is_debug_build()
 	GameLog.info(&"MovementSandbox", "MOV-001 sandbox ready")
 	GameLog.info(&"ElevationSandbox", "MOV-002 sandbox ready")
 	GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")
 	_verify_state_machine_core()
+	_configure_attack_timeline_preview()
+
+
+func _physics_process(_delta: float) -> void:
+	if Input.is_action_just_pressed(&"attack") and not attack_timeline.is_running:
+		var start_errors := attack_timeline.start(attack_definition)
+		for message: String in start_errors:
+			push_error("[CMB-002] %s" % message)
+	if attack_timeline.is_running:
+		attack_timeline.advance_tick()
+	_update_attack_timeline_preview()
 
 
 func _process(_delta: float) -> void:
@@ -75,3 +102,100 @@ func _verify_state_machine_core() -> void:
 			push_error("[CMB-001] %s" % message)
 		return
 	GameLog.info(&"StateMachineSandbox", "CMB-001 core ready")
+
+
+func _configure_attack_timeline_preview() -> void:
+	attack_definition = PreviewAttackDefinition as AttackDefinition
+	if attack_definition == null:
+		push_error("[CMB-002] preview AttackDefinition could not be loaded")
+		return
+	var validation_errors := attack_definition.validation_errors()
+	if not validation_errors.is_empty():
+		for message: String in validation_errors:
+			push_error("[CMB-002] %s" % message)
+		return
+
+	const PIXELS_PER_TICK := 18.0
+	startup_segment.custom_minimum_size.x = (
+		float(attack_definition.startup_ticks) * PIXELS_PER_TICK
+	)
+	active_segment.custom_minimum_size.x = (
+		float(attack_definition.active_ticks) * PIXELS_PER_TICK
+	)
+	recovery_segment.custom_minimum_size.x = (
+		float(attack_definition.recovery_ticks) * PIXELS_PER_TICK
+	)
+	startup_label.text = _phase_segment_label(
+		"Startup",
+		attack_definition.phase_tick_range(AttackDefinition.TimelinePhase.STARTUP)
+	)
+	active_label.text = _phase_segment_label(
+		"Active",
+		attack_definition.phase_tick_range(AttackDefinition.TimelinePhase.ACTIVE)
+	)
+	recovery_label.text = _phase_segment_label(
+		"Recovery",
+		attack_definition.phase_tick_range(AttackDefinition.TimelinePhase.RECOVERY)
+	)
+	var cancel_summaries := PackedStringArray()
+	for cancel_window: AttackCancelWindow in attack_definition.cancel_windows:
+		cancel_summaries.append(
+			"tick %d-%d → %s"
+			% [
+				cancel_window.start_tick,
+				cancel_window.end_tick,
+				", ".join(PackedStringArray(cancel_window.target_tags)),
+			]
+		)
+	cancel_windows_label.text = "Cancel: %s" % " · ".join(cancel_summaries)
+	_update_attack_timeline_preview()
+	GameLog.info(&"AttackTimelineSandbox", "CMB-002 timeline ready")
+
+
+func _phase_segment_label(title: String, tick_range: Vector2i) -> String:
+	if tick_range == Vector2i.ZERO:
+		return "%s\nnone" % title
+	return "%s\n%d-%d" % [title, tick_range.x, tick_range.y]
+
+
+func _update_attack_timeline_preview() -> void:
+	if attack_definition == null or not attack_timeline_panel.visible:
+		return
+	if attack_timeline.total_ticks() == 0:
+		timeline_status_label.text = (
+			"Preview: idle · press J / XInput X · total %d tick"
+			% attack_definition.total_ticks()
+		)
+		_set_timeline_highlight(AttackDefinition.TimelinePhase.BEFORE_START)
+		return
+	var cancel_targets := attack_timeline.available_cancel_targets()
+	var cancel_text := "none" if cancel_targets.is_empty() else ", ".join(cancel_targets)
+	timeline_status_label.text = (
+		"Preview: tick %d/%d · %s · hitbox %s · cancel %s"
+		% [
+			attack_timeline.action_tick,
+			attack_timeline.total_ticks(),
+			String(attack_timeline.current_phase_name()),
+			"on" if attack_timeline.is_hitbox_active() else "off",
+			cancel_text,
+		]
+	)
+	_set_timeline_highlight(attack_timeline.current_phase)
+
+
+func _set_timeline_highlight(phase: AttackDefinition.TimelinePhase) -> void:
+	startup_segment.self_modulate = (
+		Color.WHITE
+		if phase == AttackDefinition.TimelinePhase.STARTUP
+		else Color(0.58, 0.58, 0.58, 1.0)
+	)
+	active_segment.self_modulate = (
+		Color.WHITE
+		if phase == AttackDefinition.TimelinePhase.ACTIVE
+		else Color(0.58, 0.58, 0.58, 1.0)
+	)
+	recovery_segment.self_modulate = (
+		Color.WHITE
+		if phase == AttackDefinition.TimelinePhase.RECOVERY
+		else Color(0.58, 0.58, 0.58, 1.0)
+	)

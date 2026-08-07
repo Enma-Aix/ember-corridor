@@ -1,6 +1,10 @@
 extends SceneTree
 
 const BaseDefinitionScript := preload("res://scripts/data/base_definition.gd")
+const AttackDefinitionScript := preload("res://scripts/data/attack_definition.gd")
+const AttackCancelWindowScript := preload(
+	"res://scripts/data/attack_cancel_window.gd"
+)
 const DataRegistryScript := preload("res://scripts/core/data_registry.gd")
 const SettingsServiceScript := preload("res://scripts/core/settings_service.gd")
 const GroundMovementModelScript := preload(
@@ -10,6 +14,9 @@ const ElevationModelScript := preload("res://scripts/actors/elevation_model.gd")
 const DodgeModelScript := preload("res://scripts/actors/dodge_model.gd")
 const StateMachineModelScript := preload(
 	"res://scripts/combat/state_machine_model.gd"
+)
+const AttackTimelineModelScript := preload(
+	"res://scripts/combat/attack_timeline_model.gd"
 )
 
 var _case_results: Array[Dictionary] = []
@@ -43,6 +50,12 @@ func _run() -> void:
 	_record_case("state machine rejects illegal transitions with reasons", _test_state_machine_rejections())
 	_record_case("state machine invalid configuration is transactional", _test_state_machine_invalid_configuration())
 	_record_case("state machine reset and terminal state remain stable", _test_state_machine_reset_and_terminal_stability())
+	_record_case("attack definition exposes exact phase boundaries", _test_attack_definition_phase_boundaries())
+	_record_case("attack definition rejects invalid timeline data", _test_attack_definition_invalid_data())
+	_record_case("attack cancel windows are inclusive and deterministic", _test_attack_cancel_windows())
+	_record_case("attack timeline advances and completes exactly once", _test_attack_timeline_progression())
+	_record_case("attack timeline start, pause, and reset boundaries", _test_attack_timeline_runtime_boundaries())
+	_record_case("project attack Resource drives the debug visualization", _test_project_attack_visualization())
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -717,6 +730,299 @@ func _test_state_machine_reset_and_terminal_stability() -> PackedStringArray:
 	machine = null
 	if weak_machine.get_ref() != null:
 		errors.append("state machine retained itself after its owner released it")
+	return errors
+
+
+func _make_test_attack() -> AttackDefinition:
+	var attack: AttackDefinition = AttackDefinitionScript.new()
+	attack.definition_id = &"attack.test.a1"
+	attack.display_name_key = &"attack.test.a1.name"
+	attack.startup_ticks = 6
+	attack.active_ticks = 3
+	attack.recovery_ticks = 11
+	attack.hit_stop_ticks = 3
+	var dodge_window: AttackCancelWindow = AttackCancelWindowScript.new()
+	dodge_window.start_tick = 15
+	dodge_window.end_tick = 20
+	dodge_window.target_tags = [&"action.dodge"]
+	attack.cancel_windows.append(dodge_window)
+	return attack
+
+
+func _test_attack_definition_phase_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	errors.append_array(attack.validation_errors())
+	if attack.total_ticks() != 20:
+		errors.append("6/3/11 attack did not total 20 ticks")
+	if attack.phase_at_tick(0) != AttackDefinition.TimelinePhase.BEFORE_START:
+		errors.append("tick 0 was not before_start")
+	if (
+		attack.phase_at_tick(1) != AttackDefinition.TimelinePhase.STARTUP
+		or attack.phase_at_tick(6) != AttackDefinition.TimelinePhase.STARTUP
+	):
+		errors.append("startup phase did not include ticks 1 through 6")
+	if (
+		attack.phase_at_tick(7) != AttackDefinition.TimelinePhase.ACTIVE
+		or attack.phase_at_tick(9) != AttackDefinition.TimelinePhase.ACTIVE
+	):
+		errors.append("active phase did not include ticks 7 through 9")
+	if (
+		attack.phase_at_tick(10) != AttackDefinition.TimelinePhase.RECOVERY
+		or attack.phase_at_tick(20) != AttackDefinition.TimelinePhase.RECOVERY
+	):
+		errors.append("recovery phase did not include ticks 10 through 20")
+	if attack.phase_at_tick(21) != AttackDefinition.TimelinePhase.COMPLETE:
+		errors.append("tick after total duration was not complete")
+	if attack.phase_tick_range(AttackDefinition.TimelinePhase.STARTUP) != Vector2i(1, 6):
+		errors.append("startup tick range was incorrect")
+	if attack.phase_tick_range(AttackDefinition.TimelinePhase.ACTIVE) != Vector2i(7, 9):
+		errors.append("active tick range was incorrect")
+	if attack.phase_tick_range(AttackDefinition.TimelinePhase.RECOVERY) != Vector2i(10, 20):
+		errors.append("recovery tick range was incorrect")
+	var active_tick_count := 0
+	for tick: int in range(1, attack.total_ticks() + 1):
+		if attack.is_active_tick(tick):
+			active_tick_count += 1
+	if active_tick_count != 3:
+		errors.append("hitbox-active query did not return exactly three ticks")
+
+	var instant := _make_test_attack()
+	instant.startup_ticks = 0
+	instant.active_ticks = 2
+	instant.recovery_ticks = 0
+	instant.cancel_windows.clear()
+	if not instant.validation_errors().is_empty():
+		errors.append("zero-startup and zero-recovery boundary was rejected")
+	if (
+		instant.phase_at_tick(1) != AttackDefinition.TimelinePhase.ACTIVE
+		or instant.phase_at_tick(2) != AttackDefinition.TimelinePhase.ACTIVE
+		or instant.phase_at_tick(3) != AttackDefinition.TimelinePhase.COMPLETE
+	):
+		errors.append("zero-length phase boundaries were incorrect")
+	return errors
+
+
+func _test_attack_definition_invalid_data() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	attack.startup_ticks = -1
+	if attack.validation_errors().is_empty():
+		errors.append("negative startup duration was accepted")
+	attack.startup_ticks = 6
+	attack.active_ticks = 0
+	if attack.validation_errors().is_empty():
+		errors.append("zero active duration was accepted")
+	attack.active_ticks = 3
+	attack.recovery_ticks = -1
+	if attack.validation_errors().is_empty():
+		errors.append("negative recovery duration was accepted")
+	attack.recovery_ticks = 11
+	attack.hit_stop_ticks = -1
+	if attack.validation_errors().is_empty():
+		errors.append("negative hit stop was accepted")
+	attack.hit_stop_ticks = 3
+
+	var window: AttackCancelWindow = attack.cancel_windows[0]
+	window.start_tick = 0
+	if attack.validation_errors().is_empty():
+		errors.append("cancel window starting before tick 1 was accepted")
+	window.start_tick = 15
+	window.end_tick = 14
+	if attack.validation_errors().is_empty():
+		errors.append("reversed cancel window was accepted")
+	window.end_tick = 21
+	if attack.validation_errors().is_empty():
+		errors.append("cancel window beyond total duration was accepted")
+	window.end_tick = 20
+	window.target_tags = []
+	if attack.validation_errors().is_empty():
+		errors.append("cancel window without target tags was accepted")
+	window.target_tags = [&"Dodge"]
+	if attack.validation_errors().is_empty():
+		errors.append("cancel target without dotted lowercase form was accepted")
+	window.target_tags = [&"action.dodge", &"action.dodge"]
+	if attack.validation_errors().is_empty():
+		errors.append("duplicate cancel target tag was accepted")
+	return errors
+
+
+func _test_attack_cancel_windows() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	var skill_window: AttackCancelWindow = AttackCancelWindowScript.new()
+	skill_window.start_tick = 18
+	skill_window.end_tick = 19
+	skill_window.target_tags = [&"skill.any", &"action.dodge"]
+	attack.cancel_windows.append(skill_window)
+	errors.append_array(attack.validation_errors())
+	if not attack.cancel_targets_at_tick(14).is_empty():
+		errors.append("cancel targets appeared before the first window")
+	if attack.cancel_targets_at_tick(15) != PackedStringArray(["action.dodge"]):
+		errors.append("cancel window did not include its start tick")
+	if (
+		attack.cancel_targets_at_tick(18)
+		!= PackedStringArray(["action.dodge", "skill.any"])
+	):
+		errors.append("overlapping cancel targets were not deduplicated and sorted")
+	if attack.cancel_targets_at_tick(20) != PackedStringArray(["action.dodge"]):
+		errors.append("cancel window did not include its end tick")
+	if not attack.cancel_targets_at_tick(21).is_empty():
+		errors.append("cancel targets remained after all windows")
+	return errors
+
+
+func _test_attack_timeline_progression() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source_attack := _make_test_attack()
+	var timeline: AttackTimelineModel = AttackTimelineModelScript.new()
+	var phase_events: Array[Dictionary] = []
+	var completion_events: Array[Dictionary] = []
+	timeline.phase_changed.connect(
+		func(
+			_previous_phase: AttackDefinition.TimelinePhase,
+			current_phase: AttackDefinition.TimelinePhase,
+			action_tick: int
+		) -> void:
+			phase_events.append({"phase": current_phase, "tick": action_tick})
+	)
+	timeline.timeline_completed.connect(
+		func(attack_id: StringName, total_ticks: int) -> void:
+			completion_events.append({"attack_id": attack_id, "ticks": total_ticks})
+	)
+	errors.append_array(timeline.start(source_attack))
+	source_attack.startup_ticks = 60
+	var active_ticks := 0
+	var cancel_ticks := 0
+	for _tick: int in range(20):
+		if not timeline.advance_tick():
+			errors.append("timeline stopped before 20 ticks")
+			break
+		if timeline.is_hitbox_active():
+			active_ticks += 1
+		if timeline.available_cancel_targets().has("action.dodge"):
+			cancel_ticks += 1
+	if timeline.is_running:
+		errors.append("timeline remained running after its total duration")
+	if timeline.action_tick != 20 or timeline.total_ticks() != 20:
+		errors.append("runtime snapshot changed after source Resource mutation")
+	if active_ticks != 3:
+		errors.append("runtime reported %d active ticks instead of 3" % active_ticks)
+	if cancel_ticks != 6:
+		errors.append("runtime reported %d cancel ticks instead of 6" % cancel_ticks)
+	if timeline.advance_tick():
+		errors.append("completed timeline advanced past its total duration")
+	if phase_events.size() != 3:
+		errors.append("timeline did not emit exactly three phase changes")
+	elif (
+		phase_events[0]["tick"] != 1
+		or phase_events[0]["phase"] != AttackDefinition.TimelinePhase.STARTUP
+		or phase_events[1]["tick"] != 7
+		or phase_events[1]["phase"] != AttackDefinition.TimelinePhase.ACTIVE
+		or phase_events[2]["tick"] != 10
+		or phase_events[2]["phase"] != AttackDefinition.TimelinePhase.RECOVERY
+	):
+		errors.append("phase change signal boundaries were incorrect")
+	if (
+		completion_events.size() != 1
+		or completion_events[0]["attack_id"] != &"attack.test.a1"
+		or completion_events[0]["ticks"] != 20
+	):
+		errors.append("timeline completion signal was missing or incorrect")
+	return errors
+
+
+func _test_attack_timeline_runtime_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var timeline: AttackTimelineModel = AttackTimelineModelScript.new()
+	if timeline.start(null).is_empty():
+		errors.append("timeline accepted a null AttackDefinition")
+	var invalid_attack := _make_test_attack()
+	invalid_attack.active_ticks = 0
+	if timeline.start(invalid_attack).is_empty():
+		errors.append("timeline accepted invalid attack data")
+	var attack := _make_test_attack()
+	errors.append_array(timeline.start(attack))
+	if timeline.start(attack).is_empty():
+		errors.append("running timeline accepted a restart")
+	for _paused_frame: int in range(120):
+		var ignored_delta := 1.0 / 30.0 if _paused_frame % 2 == 0 else 1.0 / 144.0
+		if ignored_delta <= 0.0:
+			errors.append("invalid simulated pause delta")
+	if timeline.action_tick != 0 or not timeline.is_running:
+		errors.append("timeline advanced without an explicit tick during simulated pause")
+	timeline.advance_tick()
+	timeline.reset()
+	if (
+		timeline.action_tick != 0
+		or timeline.total_ticks() != 0
+		or timeline.is_running
+		or timeline.attack_id != &""
+	):
+		errors.append("timeline reset did not clear its runtime snapshot")
+	if not timeline.start(attack).is_empty():
+		errors.append("timeline could not restart after reset")
+	return errors
+
+
+func _test_project_attack_visualization() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var loaded := ResourceLoader.load("res://data/attacks/dev_a1.tres")
+	var attack := loaded as AttackDefinition
+	if attack == null:
+		errors.append("project attack Resource did not load as AttackDefinition")
+		return errors
+	errors.append_array(attack.validation_errors())
+	if (
+		attack.startup_ticks != 6
+		or attack.active_ticks != 3
+		or attack.recovery_ticks != 11
+		or attack.hit_stop_ticks != 3
+	):
+		errors.append("project attack Resource did not keep the 6/3/11/3 baseline")
+	var registry: DataRegistryService = DataRegistryScript.new()
+	var registry_errors := registry.reload_definitions("res://data")
+	errors.append_array(registry_errors)
+	if registry.definition_count() != 2:
+		errors.append("DataRegistry did not index character and attack Resources")
+	if registry.get_definition(&"attack.dev.a1_placeholder") != attack:
+		errors.append("DataRegistry did not return the project attack Resource")
+	registry.free()
+
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for timeline visualization")
+		return errors
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	var panel := sandbox.get_node_or_null("Hud/AttackTimelinePanel") as PanelContainer
+	var startup := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/StartupSegment"
+	) as PanelContainer
+	var active := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/ActiveSegment"
+	) as PanelContainer
+	var recovery := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/TimelineBar/RecoverySegment"
+	) as PanelContainer
+	var cancel_label := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/CancelWindowsLabel"
+	) as Label
+	if panel == null or startup == null or active == null or recovery == null:
+		errors.append("timeline visualization is missing required segment nodes")
+	elif (
+		not is_equal_approx(startup.custom_minimum_size.x, 108.0)
+		or not is_equal_approx(active.custom_minimum_size.x, 54.0)
+		or not is_equal_approx(recovery.custom_minimum_size.x, 198.0)
+	):
+		errors.append("timeline segment widths do not match the 6/3/11 ratio")
+	if panel != null and panel.visible != OS.is_debug_build():
+		errors.append("timeline visualization visibility is not guarded by Debug build")
+	if cancel_label == null or not cancel_label.text.contains("tick 15-20"):
+		errors.append("timeline visualization does not show the cancel window")
+	sandbox.free()
 	return errors
 
 

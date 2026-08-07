@@ -1,6 +1,6 @@
 # 余烬回廊（Ember Corridor）
 
-原创、完全离线的 2D 横版卷轴动作 RPG。M0 工程基线与 MOV-001/002/003 已完成；当前分支实现 M1 的 CMB-001 通用有限状态机，不包含正式攻击、敌人、关卡或高保真 UI。
+原创、完全离线的 2D 横版卷轴动作 RPG。M0、MOV-001/002/003 与 CMB-001 已完成；当前分支实现 M1 的 CMB-002 数据驱动攻击时间线，不包含实际命中、伤害、敌人、关卡或高保真 UI。
 
 ## 固定技术基线
 
@@ -19,8 +19,8 @@
 1. 从 Godot 官方归档下载 Godot 4.7.1 Standard。
 2. 在 Godot Project Manager 中导入本目录的 project.godot。
 3. 确认右上角渲染器为 Compatibility。
-4. 按 F5 启动 M1 移动、跳跃、闪避与状态机核心沙盒。
-5. 使用 WASD / 左摇杆移动、K / XInput A 跳跃、L / XInput B 闪避；右上角调试面板显示地面坐标、高度、闪避 tick、无敌与冷却。
+4. 按 F5 启动 M1 移动、跳跃、闪避与攻击时间线沙盒。
+5. 使用 WASD / 左摇杆移动、K / XInput A 跳跃、L / XInput B 闪避、J / XInput X 预览攻击时间线。
 
 键盘默认映射：
 
@@ -63,9 +63,11 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - 闪避距离 70.4 px；无输入沿当前朝向；CharacterBody2D 阻止穿越 WorldStatic。
 - CMB-001：显式合法转换表、事务性配置、结构化非法转换拒绝与信号。
 - 状态机核心不依赖场景或表现层；终止状态、reset、对象释放与固定 tick 稳定性可测试。
-- 正常、边界、无效输入、真实墙体和状态转换自动化测试。
+- CMB-002：AttackDefinition 的 startup/active/recovery、hit stop 与包含首尾的取消窗。
+- Debug 色条按 6/3/11 tick 比例可视化；运行时使用 Resource 深复制快照并显式逐 tick 推进。
+- 正常、边界、无效输入、真实墙体、状态转换和攻击时间线自动化测试。
 
-详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md、docs/M1-MOV-002-TEST-PLAN.md、docs/M1-MOV-003-TEST-PLAN.md 与 docs/M1-CMB-001-TEST-PLAN.md。
+详细测试边界见 docs/M1-MOV-001-TEST-PLAN.md、docs/M1-MOV-002-TEST-PLAN.md、docs/M1-MOV-003-TEST-PLAN.md、docs/M1-CMB-001-TEST-PLAN.md 与 docs/M1-CMB-002-TEST-PLAN.md。
 
 ## M0 完成范围
 
@@ -78,7 +80,7 @@ XInput 默认映射在 M0 作为工程验证用途；可在启动画面逐项验
 - FND-007：Windows Debug 导出预设与 GitHub Actions 构建产物。
 - FND-008：Godot 许可说明和第三方资产登记表。
 
-完整冻结方案位于项目交接文档。下一项玩家战斗基础为 CMB-002 AttackDefinition 与时间线。
+完整冻结方案位于项目交接文档。下一项玩家战斗基础为 CMB-003 Hitbox/Hurtbox 与命中去重。
 
 ## 版权边界
 

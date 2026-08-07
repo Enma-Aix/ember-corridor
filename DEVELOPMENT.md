@@ -9,6 +9,7 @@
 - M1 MOV-002 分支固定为 codex/m1-mov-002，并叠加在 MOV-001 绿色提交上。
 - M1 MOV-003 分支固定为 codex/m1-mov-003，并叠加在 MOV-002 绿色提交上。
 - M1 CMB-001 分支固定为 codex/m1-cmb-001，并叠加在 MOV-003 绿色提交上。
+- M1 CMB-002 分支固定为 codex/m1-cmb-002，并叠加在 CMB-001 绿色提交上。
 - 不把构建产物、Godot 导入缓存或本机设置提交到 Git。
 
 ## M0 人工验收
@@ -70,3 +71,12 @@
 3. 运行 tests/test_runner.gd，确认合法转换、非法转换、无效配置和终止状态用例通过。
 4. 重复移动、跳跃、闪避验收，确认通用状态机尚未改变现有玩家操作行为。
 5. 检查状态机脚本不依赖动画、VFX、UI、音频或 Autoload。
+
+## CMB-002 人工验收
+
+1. 启动 scenes/tests/movement_sandbox.tscn。
+2. 确认 Debug 底部色条按 6/3/11 tick 显示 startup、active、recovery。
+3. 使用 J 与 XInput X 启动时间线预览，确认阶段边界为 1–6、7–9、10–20。
+4. 确认 tick 15–20 显示 `action.dodge`，窗口外不显示取消目标。
+5. 运行中连续按 attack，确认时间线不被重启；完成后可重新启动。
+6. 确认 Release 构建隐藏时间线 Debug 面板，且既有移动、跳跃、闪避不受影响。
