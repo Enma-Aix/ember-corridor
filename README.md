@@ -1,6 +1,6 @@
 # 余烬回廊（Ember Corridor）
 
-原创、完全离线的 2D 横版卷轴动作 RPG。M0、MOV-001/002/003 与 CMB-001/002/003/004/005 已完成；当前分支实现 M1 的 CMB-006 浮空、倒地与反无限连规则，不包含输入缓冲、正式敌人 AI、关卡或高保真 UI。
+原创、完全离线的 2D 横版卷轴动作 RPG。M0、MOV-001/002/003 与 CMB-001/002/003/004/005/006 已完成；当前为 M1 可玩灰盒预览，不包含输入缓冲、正式敌人 AI、关卡或高保真 UI。
 
 ## 固定技术基线
 
@@ -13,6 +13,14 @@
 | 首发目标 | Windows 10/11 x64 |
 | 模式 | 完全离线单机 |
 | 第三方插件 | M0 不引入 |
+
+## 直接下载 Windows 版本
+
+- [下载安装版（Setup x64）](https://github.com/Enma-Aix/ember-corridor/releases/download/v0.1.0-m1-preview/EmberCorridor-M1-Preview-Setup-x64.exe)：双击安装，提供开始菜单和桌面快捷方式。
+- [下载便携版（Portable x64）](https://github.com/Enma-Aix/ember-corridor/releases/download/v0.1.0-m1-preview/EmberCorridor-M1-Preview-Portable-x64.zip)：解压后运行 `EmberCorridor.exe`。
+- [下载 SHA256 校验文件](https://github.com/Enma-Aix/ember-corridor/releases/download/v0.1.0-m1-preview/SHA256SUMS.txt)。
+
+当前为 `v0.1.0-m1-preview` 可玩灰盒预览版。安装包尚未进行商业代码签名，因此 Windows 可能显示“未知发布者”；发布流水线会在创建 Release 前真实执行安装并启动安装后的游戏。
 
 ## 5 分钟启动
 

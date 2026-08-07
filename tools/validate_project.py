@@ -56,6 +56,9 @@ REQUIRED_FILES = (
     "README.md",
     "DEVELOPMENT.md",
     ".github/workflows/m0-ci.yml",
+    ".github/workflows/windows-release.yml",
+    "installer/windows/EmberCorridor.iss",
+    "release/VERSION",
     "scenes/boot/boot.tscn",
     "scenes/boot/boot.gd",
     "scripts/core/app.gd",
@@ -143,6 +146,7 @@ def main() -> int:
     validate_combatant_contract(errors)
     validate_juggle_contract(errors)
     validate_workflow(errors)
+    validate_release_contract(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
     validate_script_uids(errors)
@@ -1146,6 +1150,90 @@ def validate_workflow(errors: list[str]) -> None:
             errors.append(f"CI workflow missing step marker: {marker}")
 
 
+def validate_release_contract(errors: list[str]) -> None:
+    workflow_path = ROOT / ".github/workflows/windows-release.yml"
+    installer_path = ROOT / "installer/windows/EmberCorridor.iss"
+    version_path = ROOT / "release/VERSION"
+    readme_path = ROOT / "README.md"
+    if not all(
+        path.is_file()
+        for path in (workflow_path, installer_path, version_path, readme_path)
+    ):
+        return
+
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow_markers = (
+        "name: Publish Windows Preview Release",
+        "workflow_dispatch:",
+        "branches:",
+        "- main",
+        "contents: write",
+        "runs-on: windows-latest",
+        "Godot_v4.7.1-stable_win64.exe",
+        "windows_debug_x86_64.exe",
+        'PROJECT TEST SUMMARY: 64 passed, 0 failed',
+        "PASS: loaded and validated 8 definition(s)",
+        '--export-debug "Windows Desktop"',
+        "Exported game is not a Windows PE executable",
+        "PE machine 0x{0:X4}",
+        "choco install innosetup",
+        "ISCC.exe",
+        '"/VERYSILENT"',
+        "Installer did not place EmberCorridor.exe",
+        "Installed game does not match the tested exported executable",
+        r"\[DataRegistry\] Loaded 8 definition\(s\)",
+        r"\[JuggleSandbox\] CMB-006 airborne control ready",
+        "SHA256SUMS.txt",
+        "actions/upload-artifact@v4",
+        "GH_TOKEN: ${{ github.token }}",
+        "gh release create",
+        "--prerelease",
+        "EmberCorridor-M1-Preview-Setup-x64.exe",
+        "EmberCorridor-M1-Preview-Portable-x64.zip",
+    )
+    for marker in workflow_markers:
+        if marker not in workflow_text:
+            errors.append(f"Windows release workflow missing marker: {marker}")
+
+    if re.search(r"(?m)^\s*pull_request\s*:", workflow_text):
+        errors.append("Windows release workflow must not publish from pull requests")
+
+    installer_text = installer_path.read_text(encoding="utf-8")
+    installer_markers = (
+        "AppId={{5E08DCE9-20B5-4F60-8C7D-66E2469C1E87}",
+        "PrivilegesRequired=lowest",
+        "ArchitecturesAllowed=x64",
+        "ArchitecturesInstallIn64BitMode=x64",
+        'Source: "..\\..\\build\\windows\\EmberCorridor.exe"',
+        "OutputBaseFilename=EmberCorridor-M1-Preview-Setup-x64",
+        'Name: "{autoprograms}\\Ember Corridor"',
+        'Name: "{autodesktop}\\Ember Corridor"',
+    )
+    for marker in installer_markers:
+        if marker not in installer_text:
+            errors.append(f"Windows installer definition missing marker: {marker}")
+
+    version = version_path.read_text(encoding="utf-8").strip()
+    if version != "0.1.0-m1-preview":
+        errors.append(
+            "release/VERSION must be 0.1.0-m1-preview for the M1 preview release"
+        )
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+    release_url = (
+        "https://github.com/Enma-Aix/ember-corridor/releases/download/"
+        "v0.1.0-m1-preview/"
+    )
+    for asset_name in (
+        "EmberCorridor-M1-Preview-Setup-x64.exe",
+        "EmberCorridor-M1-Preview-Portable-x64.zip",
+        "SHA256SUMS.txt",
+    ):
+        marker = f"{release_url}{asset_name}"
+        if marker not in readme_text:
+            errors.append(f"README missing permanent Release asset URL: {asset_name}")
+
+
 def validate_export_boundary(errors: list[str]) -> None:
     preset_path = ROOT / "export_presets.cfg"
     if not preset_path.is_file():
@@ -1159,7 +1247,9 @@ def validate_export_boundary(errors: list[str]) -> None:
     required_filters = {
         "build/*",
         "docs/*",
+        "installer/*",
         "licenses/*",
+        "release/*",
         "scripts/tools/*",
         "tests/*",
         "tools/*",
