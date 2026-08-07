@@ -80,6 +80,10 @@ REQUIRED_FILES = (
     "scripts/data/attack_definition.gd",
     "scripts/data/attack_cancel_window.gd",
     "scripts/combat/attack_timeline_model.gd",
+    "scripts/combat/hit_contact.gd",
+    "scripts/combat/hit_resolver_model.gd",
+    "scripts/combat/hitbox_component.gd",
+    "scripts/combat/hurtbox_component.gd",
     "data/attacks/dev_a1.tres",
     "scenes/actors/player.tscn",
     "scenes/tests/movement_sandbox.tscn",
@@ -88,6 +92,7 @@ REQUIRED_FILES = (
     "docs/M1-MOV-003-TEST-PLAN.md",
     "docs/M1-CMB-001-TEST-PLAN.md",
     "docs/M1-CMB-002-TEST-PLAN.md",
+    "docs/M1-CMB-003-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -117,6 +122,7 @@ def main() -> int:
     validate_dodge_contract(errors)
     validate_state_machine_contract(errors)
     validate_attack_timeline_contract(errors)
+    validate_hit_detection_contract(errors)
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
@@ -472,6 +478,151 @@ def validate_attack_timeline_contract(errors: list[str]) -> None:
             errors.append("CMB-002 sandbox does not emit its readiness marker")
 
 
+def validate_hit_detection_contract(errors: list[str]) -> None:
+    contact_path = ROOT / "scripts/combat/hit_contact.gd"
+    resolver_path = ROOT / "scripts/combat/hit_resolver_model.gd"
+    hitbox_path = ROOT / "scripts/combat/hitbox_component.gd"
+    hurtbox_path = ROOT / "scripts/combat/hurtbox_component.gd"
+    definition_path = ROOT / "scripts/data/attack_definition.gd"
+    resource_path = ROOT / "data/attacks/dev_a1.tres"
+    player_scene_path = ROOT / "scenes/actors/player.tscn"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    core_paths = (contact_path, resolver_path, hitbox_path, hurtbox_path)
+    if not all(path.is_file() for path in core_paths):
+        return
+
+    contact_text = contact_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name HitContact",
+        "extends RefCounted",
+        "var source_instance_id: int",
+        "var target_instance_id: int",
+        "var hit_id: StringName",
+        "var rehit_interval_ticks: int",
+        "func height_ranges_overlap",
+        "func dedupe_key",
+    ):
+        if marker not in contact_text:
+            errors.append(f"CMB-003 HitContact missing marker: {marker}")
+
+    resolver_text = resolver_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name HitResolverModel",
+        "extends RefCounted",
+        "signal hit_accepted",
+        "signal hit_rejected",
+        "REJECTION_FRIENDLY_FACTION",
+        "REJECTION_INVULNERABLE",
+        "REJECTION_HEIGHT_MISS",
+        "REJECTION_DUPLICATE_HIT",
+        "func try_accept",
+        "func accept_batch",
+        "func clear",
+    ):
+        if marker not in resolver_text:
+            errors.append(f"CMB-003 HitResolver missing marker: {marker}")
+    forbidden_resolver_dependency = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+        r"get_node\s*\(|extends\s+(Node|Area2D)",
+        resolver_text,
+    )
+    if forbidden_resolver_dependency:
+        errors.append(
+            "CMB-003 resolver depends on scene or presentation code: "
+            f"{forbidden_resolver_dependency.group(0)}"
+        )
+
+    hitbox_text = hitbox_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name HitboxComponent",
+        "extends Area2D",
+        "func activate",
+        "duplicate(true)",
+        "func set_action_tick",
+        "func set_contact_enabled",
+        "func set_facing_sign",
+        "func build_contact",
+        "collision_layer = 1 << 3",
+        "collision_mask = 1 << 6",
+        "collision_layer = 1 << 4",
+        "collision_mask = 1 << 5",
+    ):
+        if marker not in hitbox_text:
+            errors.append(f"CMB-003 HitboxComponent missing marker: {marker}")
+
+    hurtbox_text = hurtbox_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name HurtboxComponent",
+        "extends Area2D",
+        "signal contact_forwarded",
+        "func bind_resolver",
+        "func set_invulnerable",
+        "func set_hit_height_range",
+        "func forward_contact",
+        "collision_layer = 1 << 5",
+        "collision_mask = 1 << 4",
+        "collision_layer = 1 << 6",
+        "collision_mask = 1 << 3",
+    ):
+        if marker not in hurtbox_text:
+            errors.append(f"CMB-003 HurtboxComponent missing marker: {marker}")
+
+    forbidden_damage_logic = re.search(
+        r"\b(DamagePacket|HitResult|apply_damage|health|poise)\b",
+        "\n".join((contact_text, resolver_text, hitbox_text, hurtbox_text)),
+        re.IGNORECASE,
+    )
+    if forbidden_damage_logic:
+        errors.append(
+            "CMB-003 contact layer implements out-of-scope damage logic: "
+            f"{forbidden_damage_logic.group(0)}"
+        )
+
+    if definition_path.is_file():
+        definition_text = definition_path.read_text(encoding="utf-8")
+        for marker in (
+            "var hitbox_size",
+            "var hitbox_offset",
+            "var min_hit_height",
+            "var max_hit_height",
+            "var rehit_interval_ticks",
+        ):
+            if marker not in definition_text:
+                errors.append(f"CMB-003 AttackDefinition missing marker: {marker}")
+
+    if resource_path.is_file():
+        resource_text = resource_path.read_text(encoding="utf-8")
+        for marker in (
+            "hitbox_size = Vector2(88, 44)",
+            "hitbox_offset = Vector2(48, -22)",
+            "min_hit_height = 0.0",
+            "max_hit_height = 56.0",
+            "rehit_interval_ticks = 0",
+        ):
+            if marker not in resource_text:
+                errors.append(f"CMB-003 placeholder attack missing marker: {marker}")
+
+    if player_scene_path.is_file():
+        player_scene = player_scene_path.read_text(encoding="utf-8")
+        for marker in (
+            '[node name="Hurtbox" type="Area2D" parent="."]',
+            '[node name="HitboxContainer" type="Node2D" parent="."]',
+            '[node name="DevA1Hitbox" type="Area2D" parent="HitboxContainer"]',
+            "collision_layer = 32",
+            "collision_layer = 8",
+        ):
+            if marker not in player_scene:
+                errors.append(f"CMB-003 player scene missing marker: {marker}")
+
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        if (
+            'GameLog.info(&"HitboxSandbox", "CMB-003 hit detection ready")'
+            not in sandbox_text
+        ):
+            errors.append("CMB-003 sandbox does not emit its readiness marker")
+
+
 def validate_workflow(errors: list[str]) -> None:
     workflow_path = ROOT / ".github/workflows/m0-ci.yml"
     if not workflow_path.is_file():
@@ -492,13 +643,14 @@ def validate_workflow(errors: list[str]) -> None:
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 35 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 42 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
         'grep -Fq "[DodgeSandbox] MOV-003 sandbox ready"',
         'grep -Fq "[StateMachineSandbox] CMB-001 core ready"',
         'grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready"',
+        'grep -Fq "[HitboxSandbox] CMB-003 hit detection ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:

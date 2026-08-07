@@ -18,6 +18,16 @@ const StateMachineModelScript := preload(
 const AttackTimelineModelScript := preload(
 	"res://scripts/combat/attack_timeline_model.gd"
 )
+const HitContactScript := preload("res://scripts/combat/hit_contact.gd")
+const HitResolverModelScript := preload(
+	"res://scripts/combat/hit_resolver_model.gd"
+)
+const HitboxComponentScript := preload(
+	"res://scripts/combat/hitbox_component.gd"
+)
+const HurtboxComponentScript := preload(
+	"res://scripts/combat/hurtbox_component.gd"
+)
 
 var _case_results: Array[Dictionary] = []
 
@@ -56,6 +66,15 @@ func _run() -> void:
 	_record_case("attack timeline advances and completes exactly once", _test_attack_timeline_progression())
 	_record_case("attack timeline start, pause, and reset boundaries", _test_attack_timeline_runtime_boundaries())
 	_record_case("project attack Resource drives the debug visualization", _test_project_attack_visualization())
+	_record_case("attack definition validates its hitbox profile", _test_attack_hitbox_profile())
+	_record_case("hit resolver deduplicates and honors rehit boundaries", _test_hit_resolver_deduplication())
+	_record_case("hit resolver filters faction, invulnerability, and height", _test_hit_resolver_filters())
+	_record_case("hit resolver accepts multiple targets in stable order", _test_hit_resolver_multi_target_order())
+	_record_case("hitbox mirrors geometry and uses named collision layers", _test_hitbox_mirroring_and_layers())
+	var area_contact_errors: PackedStringArray = await _test_hitbox_hurtbox_area_contact()
+	_record_case("Area2D contact forwards once across pause-like resume", area_contact_errors)
+	var sandbox_hitbox_errors: PackedStringArray = await _test_project_hitbox_sandbox()
+	_record_case("project sandbox wires debug hitboxes without damage", sandbox_hitbox_errors)
 	_record_case("collision layers match architecture", _test_collision_layers())
 	_record_case("valid Resource is indexed and returned", _test_valid_definition())
 	_record_case("duplicate definition ID blocks indexing", _test_duplicate_definition())
@@ -741,6 +760,11 @@ func _make_test_attack() -> AttackDefinition:
 	attack.active_ticks = 3
 	attack.recovery_ticks = 11
 	attack.hit_stop_ticks = 3
+	attack.hitbox_size = Vector2(88.0, 44.0)
+	attack.hitbox_offset = Vector2(48.0, -22.0)
+	attack.min_hit_height = 0.0
+	attack.max_hit_height = 56.0
+	attack.rehit_interval_ticks = 0
 	var dodge_window: AttackCancelWindow = AttackCancelWindowScript.new()
 	dodge_window.start_tick = 15
 	dodge_window.end_tick = 20
@@ -1022,6 +1046,383 @@ func _test_project_attack_visualization() -> PackedStringArray:
 		errors.append("timeline visualization visibility is not guarded by Debug build")
 	if cancel_label == null or not cancel_label.text.contains("tick 15-20"):
 		errors.append("timeline visualization does not show the cancel window")
+	sandbox.free()
+	return errors
+
+
+func _make_hit_contact(
+	target_instance_id: int,
+	new_action_tick: int = 7,
+	new_hit_id: StringName = &"hit.test.1",
+	new_source_faction: StringName = &"player",
+	new_target_faction: StringName = &"enemy",
+	new_target_invulnerable: bool = false,
+	source_height_range: Vector2 = Vector2(0.0, 56.0),
+	target_height_range: Vector2 = Vector2(0.0, 56.0),
+	new_rehit_interval_ticks: int = 0,
+	new_source_instance_id: int = 1001
+) -> HitContact:
+	return HitContactScript.new(
+		new_source_instance_id,
+		target_instance_id,
+		new_source_faction,
+		new_target_faction,
+		&"attack.test.a1",
+		new_hit_id,
+		new_action_tick,
+		new_rehit_interval_ticks,
+		source_height_range.x,
+		source_height_range.y,
+		target_height_range.x,
+		target_height_range.y,
+		new_target_invulnerable
+	)
+
+
+func _test_attack_hitbox_profile() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	errors.append_array(attack.validation_errors())
+	if attack.hitbox_size != Vector2(88.0, 44.0):
+		errors.append("test attack hitbox size does not match the A1 baseline")
+	if attack.hitbox_offset != Vector2(48.0, -22.0):
+		errors.append("test attack hitbox offset does not match the A1 baseline")
+	if attack.min_hit_height != 0.0 or attack.max_hit_height != 56.0:
+		errors.append("test attack hit-height range does not match the A1 baseline")
+	if attack.rehit_interval_ticks != 0:
+		errors.append("A1 must use once-per-hit-id contact semantics")
+
+	attack.hitbox_size = Vector2(0.0, 44.0)
+	if attack.validation_errors().is_empty():
+		errors.append("zero-width hitbox profile was accepted")
+	attack.hitbox_size = Vector2(88.0, 44.0)
+	attack.min_hit_height = -1.0
+	if attack.validation_errors().is_empty():
+		errors.append("negative attack hit height was accepted")
+	attack.min_hit_height = 24.0
+	attack.max_hit_height = 23.0
+	if attack.validation_errors().is_empty():
+		errors.append("reversed attack hit-height range was accepted")
+	attack.min_hit_height = 0.0
+	attack.max_hit_height = 56.0
+	attack.rehit_interval_ticks = -1
+	if attack.validation_errors().is_empty():
+		errors.append("negative rehit interval was accepted")
+	return errors
+
+
+func _test_hit_resolver_deduplication() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: HitResolverModel = HitResolverModelScript.new()
+	var first_contact := _make_hit_contact(2001)
+	if not resolver.try_accept(first_contact):
+		errors.append("first valid contact was rejected")
+	var duplicate_contact := _make_hit_contact(2001, 8)
+	if resolver.try_accept(duplicate_contact):
+		errors.append("same hit_id was accepted twice for one target")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_DUPLICATE_HIT:
+		errors.append("duplicate contact did not return the stable rejection code")
+	var next_attack_contact := _make_hit_contact(2001, 8, &"hit.test.2")
+	if not resolver.try_accept(next_attack_contact):
+		errors.append("new hit_id did not allow the same target to be hit again")
+
+	var rehit_resolver: HitResolverModel = HitResolverModelScript.new()
+	if not rehit_resolver.try_accept(
+		_make_hit_contact(2002, 7, &"hit.test.rehit", &"player", &"enemy", false, Vector2(0.0, 56.0), Vector2(0.0, 56.0), 3)
+	):
+		errors.append("first periodic contact was rejected")
+	if rehit_resolver.try_accept(
+		_make_hit_contact(2002, 9, &"hit.test.rehit", &"player", &"enemy", false, Vector2(0.0, 56.0), Vector2(0.0, 56.0), 3)
+	):
+		errors.append("periodic contact was accepted before its 3-tick interval")
+	if not rehit_resolver.try_accept(
+		_make_hit_contact(2002, 10, &"hit.test.rehit", &"player", &"enemy", false, Vector2(0.0, 56.0), Vector2(0.0, 56.0), 3)
+	):
+		errors.append("periodic contact was not accepted at the exact interval boundary")
+
+	var paused_resolver: HitResolverModel = HitResolverModelScript.new()
+	paused_resolver.try_accept(_make_hit_contact(2003, 7, &"hit.test.pause"))
+	for paused_frame: int in range(120):
+		var simulated_delta := 1.0 / 30.0 if paused_frame % 2 == 0 else 1.0 / 144.0
+		if simulated_delta <= 0.0:
+			errors.append("pause simulation produced an invalid delta")
+	if paused_resolver.try_accept(_make_hit_contact(2003, 7, &"hit.test.pause")):
+		errors.append("pause-like frames without action-tick progress caused a rehit")
+	return errors
+
+
+func _test_hit_resolver_filters() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: HitResolverModel = HitResolverModelScript.new()
+	if resolver.try_accept(
+		_make_hit_contact(2101, 7, &"hit.invalid", &"player", &"enemy", false, Vector2(0.0, 56.0), Vector2(0.0, 56.0), 0, 0)
+	):
+		errors.append("invalid runtime instance ID was accepted")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_INVALID_CONTACT:
+		errors.append("invalid contact did not use its stable rejection code")
+	if resolver.try_accept(
+		_make_hit_contact(2102, 7, &"hit.friendly", &"player", &"player")
+	):
+		errors.append("same-faction contact was accepted")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_FRIENDLY_FACTION:
+		errors.append("same-faction contact returned the wrong rejection code")
+	if resolver.try_accept(
+		_make_hit_contact(2103, 7, &"hit.invulnerable", &"player", &"enemy", true)
+	):
+		errors.append("invulnerable target contact was accepted")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_INVULNERABLE:
+		errors.append("invulnerable target returned the wrong rejection code")
+	if resolver.try_accept(
+		_make_hit_contact(2104, 7, &"hit.height_miss", &"player", &"enemy", false, Vector2(0.0, 23.0), Vector2(24.0, 56.0))
+	):
+		errors.append("separated elevation ranges were accepted")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_HEIGHT_MISS:
+		errors.append("height miss returned the wrong rejection code")
+	if not resolver.try_accept(
+		_make_hit_contact(2105, 7, &"hit.height_edge", &"player", &"enemy", false, Vector2(0.0, 24.0), Vector2(24.0, 56.0))
+	):
+		errors.append("inclusive elevation boundary contact was rejected")
+	return errors
+
+
+func _test_hit_resolver_multi_target_order() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var resolver: HitResolverModel = HitResolverModelScript.new()
+	var signaled_target_ids: Array[int] = []
+	resolver.hit_accepted.connect(
+		func(contact: HitContact) -> void:
+			signaled_target_ids.append(contact.target_instance_id)
+	)
+	var contacts: Array[HitContact] = [
+		_make_hit_contact(2203, 7, &"hit.test.multi"),
+		_make_hit_contact(2201, 7, &"hit.test.multi"),
+		_make_hit_contact(2202, 7, &"hit.test.multi"),
+	]
+	var accepted_contacts := resolver.accept_batch(contacts)
+	if accepted_contacts.size() != 3:
+		errors.append("one hitbox did not accept all three distinct targets")
+	elif (
+		accepted_contacts[0].target_instance_id != 2201
+		or accepted_contacts[1].target_instance_id != 2202
+		or accepted_contacts[2].target_instance_id != 2203
+	):
+		errors.append("multi-target results were not ordered by runtime target ID")
+	if signaled_target_ids != [2201, 2202, 2203]:
+		errors.append("multi-target accepted signals were not deterministic")
+	if not resolver.accept_batch(contacts).is_empty():
+		errors.append("replaying a multi-target batch bypassed hit_id deduplication")
+	if resolver.tracked_contact_count() != 3:
+		errors.append("resolver did not track one dedupe key per target")
+	return errors
+
+
+func _test_hitbox_mirroring_and_layers() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var attack := _make_test_attack()
+	var hitbox: HitboxComponent = HitboxComponentScript.new()
+	var collision_shape := CollisionShape2D.new()
+	collision_shape.name = "CollisionShape2D"
+	hitbox.add_child(collision_shape)
+	errors.append_array(
+		hitbox.activate(attack, &"hit.test.mirror", 2301, &"player", 1, 12.0)
+	)
+	if hitbox.activate(attack, &"hit.test.restart", 2301, &"player", 1).is_empty():
+		errors.append("active hitbox accepted a new hit_id before state exit")
+	if hitbox.position != Vector2(48.0, -22.0):
+		errors.append("right-facing hitbox did not use the configured offset")
+	if hitbox.collision_layer != 8 or hitbox.collision_mask != 64:
+		errors.append("player hitbox does not use PlayerHitbox -> EnemyHurtbox layers")
+	var rectangle := collision_shape.shape as RectangleShape2D
+	if rectangle == null or rectangle.size != Vector2(88.0, 44.0):
+		errors.append("hitbox CollisionShape2D did not use Resource geometry")
+	if not hitbox.set_facing_sign(-1):
+		errors.append("valid left-facing sign was rejected")
+	if hitbox.position != Vector2(-48.0, -22.0):
+		errors.append("left-facing hitbox was not an exact horizontal mirror")
+	if hitbox.set_facing_sign(0):
+		errors.append("invalid zero facing sign was accepted")
+	hitbox.set_action_tick(6)
+	if hitbox.set_contact_enabled(true) or hitbox.contact_enabled:
+		errors.append("hitbox activated during startup")
+	hitbox.set_action_tick(7)
+	if not hitbox.set_contact_enabled(true) or not hitbox.contact_enabled:
+		errors.append("hitbox did not activate on the first active tick")
+	var contact := hitbox.build_contact(2302, &"enemy", false, 24.0, 80.0)
+	if contact == null:
+		errors.append("active hitbox did not create a contact snapshot")
+	elif (
+		not is_equal_approx(contact.source_min_hit_height, 12.0)
+		or not is_equal_approx(contact.source_max_hit_height, 68.0)
+	):
+		errors.append("source elevation was not included in the hit-height snapshot")
+	hitbox.deactivate()
+
+	var enemy_hitbox: HitboxComponent = HitboxComponentScript.new()
+	var enemy_shape := CollisionShape2D.new()
+	enemy_shape.name = "CollisionShape2D"
+	enemy_hitbox.add_child(enemy_shape)
+	errors.append_array(
+		enemy_hitbox.activate(attack, &"hit.test.enemy", 2303, &"enemy", 1)
+	)
+	if enemy_hitbox.collision_layer != 16 or enemy_hitbox.collision_mask != 32:
+		errors.append("enemy hitbox does not use EnemyHitbox -> PlayerHurtbox layers")
+	hitbox.free()
+	enemy_hitbox.free()
+	return errors
+
+
+func _test_hitbox_hurtbox_area_contact() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var world := Node2D.new()
+	root.add_child(world)
+	var resolver: HitResolverModel = HitResolverModelScript.new()
+	var hitbox: HitboxComponent = HitboxComponentScript.new()
+	hitbox.name = "Hitbox"
+	var hitbox_shape := CollisionShape2D.new()
+	hitbox_shape.name = "CollisionShape2D"
+	hitbox.add_child(hitbox_shape)
+	world.add_child(hitbox)
+
+	var hurtbox: HurtboxComponent = HurtboxComponentScript.new()
+	hurtbox.name = "Hurtbox"
+	hurtbox.position = Vector2(48.0, 0.0)
+	var hurtbox_shape := CollisionShape2D.new()
+	hurtbox_shape.name = "CollisionShape2D"
+	hurtbox_shape.position = Vector2(0.0, -22.0)
+	var hurtbox_rectangle := RectangleShape2D.new()
+	hurtbox_rectangle.size = Vector2(22.0, 48.0)
+	hurtbox_shape.shape = hurtbox_rectangle
+	hurtbox.add_child(hurtbox_shape)
+	errors.append_array(hurtbox.configure(2402, &"enemy", 0.0, 56.0))
+	hurtbox.bind_resolver(resolver)
+	world.add_child(hurtbox)
+
+	var forwarded_contacts: Array[HitContact] = []
+	hurtbox.contact_forwarded.connect(
+		func(contact: HitContact) -> void:
+			forwarded_contacts.append(contact)
+	)
+	var attack := _make_test_attack()
+	errors.append_array(
+		hitbox.activate(attack, &"hit.test.area", 2401, &"player", 1)
+	)
+	hitbox.set_action_tick(7)
+	hitbox.set_contact_enabled(true)
+	await physics_frame
+	await physics_frame
+	if resolver.accepted_count != 1 or forwarded_contacts.size() != 1:
+		errors.append(
+			"Area2D overlap produced %d accepted / %d forwarded contacts"
+			% [resolver.accepted_count, forwarded_contacts.size()]
+		)
+
+	hitbox.set_contact_enabled(false)
+	await physics_frame
+	await physics_frame
+	hitbox.set_contact_enabled(true)
+	await physics_frame
+	await physics_frame
+	if resolver.accepted_count != 1:
+		errors.append("reenabling the same paused hit_id accepted duplicate contact")
+	if resolver.last_rejection_code != HitResolverModel.REJECTION_DUPLICATE_HIT:
+		errors.append("reenabled overlap did not pass through resolver deduplication")
+
+	hitbox.set_contact_enabled(false)
+	await physics_frame
+	await physics_frame
+	hitbox.deactivate()
+	hurtbox.position = Vector2(48.0, 45.0)
+	errors.append_array(
+		hitbox.activate(attack, &"hit.test.depth_inside", 2401, &"player", 1)
+	)
+	hitbox.set_action_tick(7)
+	hitbox.set_contact_enabled(true)
+	await physics_frame
+	await physics_frame
+	if resolver.accepted_count != 2:
+		errors.append("one-pixel depth-edge overlap did not produce a contact")
+
+	hitbox.set_contact_enabled(false)
+	await physics_frame
+	await physics_frame
+	hitbox.deactivate()
+	hurtbox.position = Vector2(48.0, 47.0)
+	errors.append_array(
+		hitbox.activate(attack, &"hit.test.depth_outside", 2401, &"player", 1)
+	)
+	hitbox.set_action_tick(7)
+	hitbox.set_contact_enabled(true)
+	await physics_frame
+	await physics_frame
+	if resolver.accepted_count != 2:
+		errors.append("separated depth-edge shapes produced a false contact")
+
+	var weak_hitbox: WeakRef = weakref(hitbox)
+	var weak_hurtbox: WeakRef = weakref(hurtbox)
+	world.free()
+	hitbox = null
+	hurtbox = null
+	if weak_hitbox.get_ref() != null or weak_hurtbox.get_ref() != null:
+		errors.append("released Area2D combat components remained alive")
+	return errors
+
+
+func _test_project_hitbox_sandbox() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for CMB-003 integration")
+		return errors
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	var player := sandbox.get_node_or_null("Actors/PlayerRoot") as CharacterBody2D
+	var hitbox := sandbox.get_node_or_null(
+		"Actors/PlayerRoot/HitboxContainer/DevA1Hitbox"
+	) as HitboxComponent
+	var hurtbox := sandbox.get_node_or_null(
+		"Actors/PlayerRoot/Hurtbox"
+	) as HurtboxComponent
+	var dummy_a := sandbox.get_node_or_null(
+		"Actors/Targets/DummyA/DummyAHurtbox"
+	) as HurtboxComponent
+	var dummy_b := sandbox.get_node_or_null(
+		"Actors/Targets/DummyB/DummyBHurtbox"
+	) as HurtboxComponent
+	var contact_label := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/HitContactLabel"
+	) as Label
+	if player == null or hitbox == null or hurtbox == null:
+		errors.append("player scene is missing HitboxContainer or Hurtbox")
+	elif (
+		hitbox.collision_layer != 8
+		or hitbox.collision_mask != 64
+		or hurtbox.collision_layer != 32
+		or hurtbox.collision_mask != 16
+	):
+		errors.append("player hitbox/hurtbox collision layers do not match architecture")
+	if dummy_a == null or dummy_b == null:
+		errors.append("sandbox is missing its two multi-target hurtboxes")
+	elif (
+		dummy_a.combatant_instance_id == dummy_b.combatant_instance_id
+		or dummy_a.faction_id != &"enemy"
+		or dummy_b.faction_id != &"enemy"
+	):
+		errors.append("sandbox targets do not have independent enemy runtime identities")
+	if contact_label == null or not contact_label.text.contains("Contacts: 0 accepted"):
+		errors.append("CMB-003 debug contact counter is missing")
+	if hitbox != null and hitbox.contact_enabled:
+		errors.append("project hitbox started enabled outside the active attack phase")
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	for _tick: int in range(12):
+		await physics_frame
+	if contact_label == null or not contact_label.text.contains("Contacts: 2 accepted"):
+		errors.append("A1 sandbox attack did not contact both distinct training targets once")
+	if hitbox != null and hitbox.contact_enabled:
+		errors.append("project hitbox remained enabled after the active phase")
 	sandbox.free()
 	return errors
 

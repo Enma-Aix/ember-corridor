@@ -18,6 +18,13 @@ enum TimelinePhase {
 @export_category("Feedback")
 @export_range(0, 120, 1, "or_greater") var hit_stop_ticks := 0
 
+@export_category("Hitbox")
+@export var hitbox_size := Vector2(88.0, 44.0)
+@export var hitbox_offset := Vector2(48.0, -22.0)
+@export_range(0.0, 1000.0, 1.0, "or_greater") var min_hit_height := 0.0
+@export_range(0.0, 1000.0, 1.0, "or_greater") var max_hit_height := 56.0
+@export_range(0, 600, 1, "or_greater") var rehit_interval_ticks := 0
+
 
 func definition_kind() -> StringName:
 	return &"attack"
@@ -33,6 +40,14 @@ func validation_errors() -> PackedStringArray:
 		errors.append("recovery_ticks must be at least 0")
 	if hit_stop_ticks < 0:
 		errors.append("hit_stop_ticks must be at least 0")
+	if hitbox_size.x <= 0.0 or hitbox_size.y <= 0.0:
+		errors.append("hitbox_size components must be greater than 0")
+	if min_hit_height < 0.0:
+		errors.append("min_hit_height must be at least 0")
+	if max_hit_height < min_hit_height:
+		errors.append("max_hit_height must be greater than or equal to min_hit_height")
+	if rehit_interval_ticks < 0:
+		errors.append("rehit_interval_ticks must be at least 0")
 	var duration := total_ticks()
 	for index: int in cancel_windows.size():
 		var cancel_window: AttackCancelWindow = cancel_windows[index]
