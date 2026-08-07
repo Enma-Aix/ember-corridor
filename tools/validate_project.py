@@ -111,6 +111,7 @@ def main() -> int:
     validate_workflow(errors)
     validate_export_boundary(errors)
     validate_asset_registry(errors)
+    validate_script_uids(errors)
     validate_offline_boundary(errors)
 
     if errors:
@@ -124,7 +125,7 @@ def main() -> int:
     print(f"  - {len(REQUIRED_ACTIONS)} Input actions")
     print(f"  - {len(EXPECTED_LAYERS)} named collision layers")
     print(f"  - {len(EXPECTED_AUTOLOADS)} approved Autoload services")
-    print("  - asset license register and offline boundary")
+    print("  - stable script UIDs, asset license register, and offline boundary")
     return 0
 
 
@@ -397,6 +398,29 @@ def validate_asset_registry(errors: list[str]) -> None:
         for field in ("asset_id", "source_url", "author", "license", "project_path"):
             if not (row.get(field) or "").strip():
                 errors.append(f"asset register row {row_index} has empty {field}")
+
+
+def validate_script_uids(errors: list[str]) -> None:
+    discovered: dict[str, Path] = {}
+    for script_path in sorted(ROOT.rglob("*.gd")):
+        relative_path = script_path.relative_to(ROOT)
+        if ".godot" in relative_path.parts or "build" in relative_path.parts:
+            continue
+        uid_path = Path(f"{script_path}.uid")
+        if not uid_path.is_file():
+            errors.append(f"Godot script UID is not tracked: {relative_path}.uid")
+            continue
+        uid = uid_path.read_text(encoding="utf-8").strip()
+        if not re.fullmatch(r"uid://[a-z0-9]+", uid):
+            errors.append(f"invalid Godot script UID in {uid_path.relative_to(ROOT)}")
+            continue
+        if uid in discovered:
+            errors.append(
+                "duplicate Godot script UID in "
+                f"{uid_path.relative_to(ROOT)} and {discovered[uid]}"
+            )
+            continue
+        discovered[uid] = uid_path.relative_to(ROOT)
 
 
 def validate_offline_boundary(errors: list[str]) -> None:
