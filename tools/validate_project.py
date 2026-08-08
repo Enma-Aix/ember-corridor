@@ -1681,6 +1681,16 @@ def validate_release_contract(errors: list[str]) -> None:
     if not re.search(r"(?m)^\s*push\s*:", workflow_text):
         errors.append("Windows release workflow must publish from a push to main")
 
+    installer_guard = re.compile(
+        r"choco install innosetup --yes --no-progress\s+"
+        r"if \(\$LASTEXITCODE -ne 0\) \{\s+"
+        r'throw "Inno Setup installation failed with code \$LASTEXITCODE"\s+'
+        r"\}\s+"
+        r"\$compiler = Get-Command ISCC\.exe"
+    )
+    if not installer_guard.search(workflow_text):
+        errors.append("Windows release workflow has a malformed Inno Setup exit-code guard")
+
     installer_text = installer_path.read_text(encoding="utf-8")
     installer_markers = (
         "AppId={{5E08DCE9-20B5-4F60-8C7D-66E2469C1E87}",

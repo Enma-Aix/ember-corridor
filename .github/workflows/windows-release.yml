@@ -235,6 +235,7 @@ jobs:
           choco install innosetup --yes --no-progress
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup installation failed with code $LASTEXITCODE"
+          }
           $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
           if ($null -eq $compiler) {
             $fallback = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
