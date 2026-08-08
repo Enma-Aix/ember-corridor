@@ -1,6 +1,13 @@
 class_name AttackDefinition
 extends BaseDefinition
 
+const HIT_STOP_BUDGETS := {
+	"light": Vector2i(2, 3),
+	"medium": Vector2i(4, 5),
+	"heavy": Vector2i(6, 8),
+	"finisher": Vector2i(1, 10),
+}
+
 enum TimelinePhase {
 	BEFORE_START,
 	STARTUP,
@@ -50,6 +57,16 @@ func validation_errors() -> PackedStringArray:
 		errors.append("hit_stop_ticks must be at least 0")
 	if feedback_strength not in ["light", "medium", "heavy", "finisher"]:
 		errors.append("feedback_strength must be light, medium, heavy, or finisher")
+	elif hit_stop_ticks > 0:
+		var hit_stop_budget: Vector2i = HIT_STOP_BUDGETS[feedback_strength]
+		if (
+			hit_stop_ticks < hit_stop_budget.x
+			or hit_stop_ticks > hit_stop_budget.y
+		):
+			errors.append(
+				"hit_stop_ticks must stay inside the %s budget [%d, %d]"
+				% [feedback_strength, hit_stop_budget.x, hit_stop_budget.y]
+			)
 	if not _is_finite_non_negative(damage_coefficient):
 		errors.append("damage_coefficient must be finite and at least 0")
 	if not _is_finite_non_negative(flat_damage):

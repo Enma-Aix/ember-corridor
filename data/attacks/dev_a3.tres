@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="AttackDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/attack_definition.gd" id="1_attack"]
+[ext_resource type="Script" path="res://scripts/data/attack_cancel_window.gd" id="2_cancel"]
+
+[sub_resource type="Resource" id="AttackCancelWindow_dodge"]
+script = ExtResource("2_cancel")
+start_tick = 22
+end_tick = 31
+target_tags = Array[StringName]([&"action.dodge"])
+
+[sub_resource type="Resource" id="AttackCancelWindow_skill_1"]
+script = ExtResource("2_cancel")
+start_tick = 13
+end_tick = 27
+target_tags = Array[StringName]([&"action.skill_1"])
+
+[resource]
+script = ExtResource("1_attack")
+definition_id = &"attack.bladebound.a3_rising_slash"
+display_name_key = &"attack.bladebound.a3_rising_slash.name"
+tags = Array[StringName]([&"normal_attack", &"combo_a3", &"control.launch"])
+startup_ticks = 9
+active_ticks = 4
+recovery_ticks = 18
+cancel_windows = Array[ExtResource("2_cancel")]([SubResource("AttackCancelWindow_dodge"), SubResource("AttackCancelWindow_skill_1")])
+hit_stop_ticks = 5
+feedback_strength = "medium"
+damage_coefficient = 1.15
+flat_damage = 15.0
+poise_damage = 6.0
+hit_tags = Array[StringName]([&"damage.physical", &"attack.normal", &"control.launch"])
+launch_profile = &"combat.launch.dev_launcher"
+hitbox_size = Vector2(96, 52)
+hitbox_offset = Vector2(54, -26)
+min_hit_height = 0.0
+max_hit_height = 160.0
+rehit_interval_ticks = 0

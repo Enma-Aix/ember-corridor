@@ -85,3 +85,9 @@ color = Color(1, 0.79, 0.35, 1)
 position = Vector2(19, -10)
 polygon = PackedVector2Array(-2, -6, 10, 0, -2, 6)
 color = Color(0.45, 0.9, 1, 1)
+
+[node name="AttackTrail" type="Polygon2D" parent="VisualRoot"]
+visible = false
+position = Vector2(22, -10)
+polygon = PackedVector2Array(0, -9, 32, -32, 74, -22, 88, 0, 74, 22, 32, 32, 0, 9, 48, 0)
+color = Color(1, 0.42, 0.08, 0.78)

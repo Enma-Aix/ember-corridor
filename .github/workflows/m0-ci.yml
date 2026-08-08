@@ -77,6 +77,16 @@ jobs:
             build/test-results/project-boot.txt
           grep -Fq "[JuggleSandbox] CMB-006 airborne control ready" \
             build/test-results/project-boot.txt
+          grep -Fq "[InputBufferSandbox] CMB-007 input buffer ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[NormalComboSandbox] CMB-008 three-hit combo ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[LinebreakerSandbox] CMB-009 linebreaker ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[HitFeedbackSandbox] CMB-010 feedback service ready" \
+            build/test-results/project-boot.txt
+          grep -Fq "[VisualSlice] playable presentation ready" \
+            build/test-results/project-boot.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/project-boot.txt; then
             exit 1
           fi
@@ -97,6 +107,7 @@ jobs:
           godot --headless --path . --export-debug "Windows Desktop" build/windows/EmberCorridor.exe
           test -s build/windows/EmberCorridor.exe
           cp licenses/GODOT-ENGINE-LICENSE.md build/windows/GODOT-ENGINE-LICENSE.md
+          cp licenses/fonts/NOTO-SANS-SC-OFL.txt build/windows/NOTO-SANS-SC-OFL.txt
           cp docs/ASSET-LICENSE-REGISTER.csv build/windows/ASSET-LICENSE-REGISTER.csv
 
       - name: Smoke-test packaged resources
@@ -104,7 +115,7 @@ jobs:
           godot --headless --path . --export-pack "Windows Desktop" "$RUNNER_TEMP/ember-corridor-m0.pck"
           godot --headless --main-pack "$RUNNER_TEMP/ember-corridor-m0.pck" --quit-after 3 2>&1 \
             | tee build/test-results/packaged-smoke.txt
-          grep -Fq "[DataRegistry] Loaded 8 definition(s)" build/test-results/packaged-smoke.txt
+          grep -Fq "[DataRegistry] Loaded 15 definition(s)" build/test-results/packaged-smoke.txt
           grep -Fq "[AttackTimelineSandbox] CMB-002 timeline ready" \
             build/test-results/packaged-smoke.txt
           grep -Fq "[HitboxSandbox] CMB-003 hit detection ready" \
@@ -114,6 +125,14 @@ jobs:
           grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready" \
             build/test-results/packaged-smoke.txt
           grep -Fq "[JuggleSandbox] CMB-006 airborne control ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[InputBufferSandbox] CMB-007 input buffer ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[NormalComboSandbox] CMB-008 three-hit combo ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[LinebreakerSandbox] CMB-009 linebreaker ready" \
+            build/test-results/packaged-smoke.txt
+          grep -Fq "[HitFeedbackSandbox] CMB-010 feedback service ready" \
             build/test-results/packaged-smoke.txt
           if grep -Eq "^(SCRIPT )?ERROR:" build/test-results/packaged-smoke.txt; then
             exit 1
@@ -208,7 +227,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 64 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 87 passed, 0 failed" `
             -Quiet)) {
             throw "Windows game-test summary was not found"
           }
@@ -229,7 +248,7 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/windows/project-boot.txt `
-            -Pattern "[DataRegistry] Loaded 8 definition(s)" `
+            -Pattern "[DataRegistry] Loaded 15 definition(s)" `
             -SimpleMatch `
             -Quiet)) {
             throw "Windows project boot did not initialize DataRegistry"
@@ -297,6 +316,34 @@ jobs:
             -Quiet)) {
             throw "Windows project boot did not instantiate the CMB-006 juggle model"
           }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[InputBufferSandbox] CMB-007 input buffer ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-007 input buffer"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[NormalComboSandbox] CMB-008 three-hit combo ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-008 normal combo"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[LinebreakerSandbox] CMB-009 linebreaker ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-009 linebreaker"
+          }
+          if (-not (Select-String `
+            -Path build/test-results/windows/project-boot.txt `
+            -Pattern "[HitFeedbackSandbox] CMB-010 feedback service ready" `
+            -SimpleMatch `
+            -Quiet)) {
+            throw "Windows project boot did not instantiate the CMB-010 feedback service"
+          }
           if (Select-String `
             -Path build/test-results/windows/project-boot.txt `
             -Pattern "^(SCRIPT )?ERROR:" `
@@ -356,7 +403,7 @@ jobs:
           }
 
           $combinedLog = (Get-Content $stdout -Raw) + "`n" + (Get-Content $stderr -Raw)
-          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 8 definition\(s\)") {
+          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 15 definition\(s\)") {
             throw "Exported Windows game did not initialize DataRegistry"
           }
           if ($combinedLog -notmatch "\[App\] Foundation services initialized") {
@@ -388,6 +435,18 @@ jobs:
           }
           if ($combinedLog -notmatch "\[JuggleSandbox\] CMB-006 airborne control ready") {
             throw "Exported Windows game did not instantiate the CMB-006 juggle model"
+          }
+          if ($combinedLog -notmatch "\[InputBufferSandbox\] CMB-007 input buffer ready") {
+            throw "Exported Windows game did not instantiate the CMB-007 input buffer"
+          }
+          if ($combinedLog -notmatch "\[NormalComboSandbox\] CMB-008 three-hit combo ready") {
+            throw "Exported Windows game did not instantiate the CMB-008 normal combo"
+          }
+          if ($combinedLog -notmatch "\[LinebreakerSandbox\] CMB-009 linebreaker ready") {
+            throw "Exported Windows game did not instantiate the CMB-009 linebreaker"
+          }
+          if ($combinedLog -notmatch "\[HitFeedbackSandbox\] CMB-010 feedback service ready") {
+            throw "Exported Windows game did not instantiate the CMB-010 feedback service"
           }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Exported Windows game logged a Godot runtime error"

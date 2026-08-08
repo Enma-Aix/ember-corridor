@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="HitFeedbackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/hit_feedback_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+definition_id = &"feedback.hit.medium"
+display_name_key = &"feedback.hit.medium.name"
+tags = Array[StringName]([&"feedback", &"hit", &"medium"])
+strength = "medium"
+minimum_hit_stop_ticks = 4
+maximum_hit_stop_ticks = 5
+camera_shake_pixels = 2.2
+camera_duration_ticks = 5
+camera_extension_ticks = 1
+camera_zoom_pulse = 0.01
+vfx_style = &"vfx.hit.medium"
+vfx_scale = 1.05
+vfx_lifetime_ticks = 11
+sfx_cue = &"sfx.hit.medium"
+sfx_layer_count = 2

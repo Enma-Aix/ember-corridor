@@ -52,7 +52,7 @@ CMB-006 在 MOV-002 视觉高度和 CMB-005 CombatantModel 之上，建立完全
 
 | 定义 ID | 用途 |
 | --- | --- |
-| `attack.dev.launcher_placeholder` | 沙盒 A1 启动攻击，引用启动器配置 |
+| `attack.bladebound.a3_rising_slash` | 沙盒三连段 A3 挑斩，引用启动器配置 |
 | `combat.launch.dev_launcher` | 720 px/s 浮空，不可命中倒地目标 |
 | `combat.launch.dev_ground_pursuit` | 不提供浮空速度，可命中倒地目标 |
 
@@ -61,7 +61,7 @@ CMB-006 在 MOV-002 视觉高度和 CMB-005 CombatantModel 之上，建立完全
 ## 自动化验收矩阵
 
 1. `ElevationModel`：外部浮空速度、倍率重力、强制落地、NaN/Inf/负值拒绝。
-2. Resource 与 DataRegistry：8 个定义唯一且有效；启动器/追击 ID、速度和倒地权限正确。
+2. Resource 与 DataRegistry：10 个定义唯一且有效；启动器/追击 ID、速度和倒地权限正确。
 3. 普通目标：首次启动、空中再命中、抗性增长、重力增大和浮空衰减。
 4. 精确边界：第 210 tick 强制落地；30 tick 倒地窗口只允许一次包含边界的地面追击。
 5. 免疫与优先级：精英/首领不浮空；破防和目标失效清空浮空状态。
@@ -71,16 +71,16 @@ CMB-006 在 MOV-002 视觉高度和 CMB-005 CombatantModel 之上，建立完全
 9. 沙盒集成：普通训练目标的抽象 hit height 与 VisualRoot 高度同步；精英训练目标保持浮空免疫。
 10. 回归：MOV-001/002/003 与 CMB-001 至 CMB-005 全部既有用例继续通过。
 
-预期测试汇总为 `PROJECT TEST SUMMARY: 64 passed, 0 failed`，并且日志中不出现 `ERROR:` 或 `SCRIPT ERROR:`。
+当前回归测试汇总为 `PROJECT TEST SUMMARY: 87 passed, 0 failed`，并且日志中不出现 `ERROR:` 或 `SCRIPT ERROR:`。
 
 ## 手工与平台验收
 
 1. 启动 `scenes/tests/movement_sandbox.tscn`，确认出现 `[JuggleSandbox] CMB-006 airborne control ready`。
-2. 使用 J / XInput X，确认普通训练目标视觉上升后落地，HUD 的 Air 与 JR 更新；精英目标不升空。
+2. 连续使用三次 J / XInput X，确认 A3 使普通训练目标视觉上升后落地，HUD 的 Air 与 JR 更新；精英目标不升空。
 3. 连续命中普通目标，确认后续浮空幅度降低且下落加快。
 4. 暂停游戏，确认高度、抗性、210/30 tick 计时均不推进；恢复后继续。
-5. Linux 上执行静态校验、干净导入、数据校验、64 项测试、主场景启动和 PCK 启动。
-6. GitHub Actions 的 `windows-latest` 作业执行原生导入、数据校验、64 项测试、工程启动，并实际启动导出的 x86-64 EXE。
+5. Linux 上执行静态校验、干净导入、数据校验、73 项测试、主场景启动和 PCK 启动。
+6. GitHub Actions 的 `windows-latest` 作业执行原生导入、数据校验、73 项测试、工程启动，并实际启动导出的 x86-64 EXE。
 
 沙盒只提供启动器的交互预览；一次地面追击上限与逐 tick 精确边界由自动化测试覆盖。正式手感需要在动画、受击反馈和敌人行为接入后再次调参。
 

@@ -1,0 +1,552 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/vertical_slice.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/tests/movement_sandbox.tscn" id="2_combat"]
+[ext_resource type="Texture2D" path="res://assets/runtime/backgrounds/furnace_corridor_arena_v01.png" id="3_arena"]
+[ext_resource type="Texture2D" path="res://assets/runtime/backgrounds/title_keyart_runtime_v01.png" id="4_title"]
+
+[sub_resource type="StyleBoxFlat" id="PanelMain"]
+bg_color = Color(0.018, 0.035, 0.045, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.16, 0.69, 0.76, 0.52)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="PanelWarm"]
+bg_color = Color(0.035, 0.025, 0.022, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.95, 0.43, 0.12, 0.7)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="HealthBackground"]
+bg_color = Color(0.025, 0.035, 0.045, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.55, 0.58, 0.7)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="HealthFill"]
+bg_color = Color(0.95, 0.31, 0.13, 0.96)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="EnemyFill"]
+bg_color = Color(0.93, 0.58, 0.16, 0.95)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+bg_color = Color(0.04, 0.12, 0.14, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.18, 0.78, 0.84, 0.85)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 24.0
+content_margin_top = 12.0
+content_margin_right = 24.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
+bg_color = Color(0.09, 0.27, 0.29, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.95, 0.96, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 24.0
+content_margin_top = 11.0
+content_margin_right = 24.0
+content_margin_bottom = 11.0
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
+bg_color = Color(0.84, 0.31, 0.09, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 0.7, 0.24, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 24.0
+content_margin_top = 11.0
+content_margin_right = 24.0
+content_margin_bottom = 11.0
+
+[sub_resource type="StyleBoxFlat" id="ButtonFocus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.63, 1, 1, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="EndPanel"]
+bg_color = Color(0.012, 0.025, 0.032, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.18, 0.82, 0.86, 0.86)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="EmberCorridorVerticalSlice" type="Node2D"]
+script = ExtResource("1_script")
+
+[node name="RuntimeBackdrop" type="Sprite2D" parent="."]
+z_index = -100
+texture_filter = 1
+position = Vector2(640, 360)
+scale = Vector2(0.76555, 0.76514)
+texture = ExtResource("3_arena")
+
+[node name="CombatCore" parent="." instance=ExtResource("2_combat")]
+
+[node name="Hud" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="HudRoot" type="Control" parent="Hud"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PlayerPanel" type="PanelContainer" parent="Hud/HudRoot"]
+offset_left = 24.0
+offset_top = 22.0
+offset_right = 390.0
+offset_bottom = 116.0
+theme_override_styles/panel = SubResource("PanelMain")
+
+[node name="Margin" type="MarginContainer" parent="Hud/HudRoot/PlayerPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="Hud/HudRoot/PlayerPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Header" type="HBoxContainer" parent="Hud/HudRoot/PlayerPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Hud/HudRoot/PlayerPanel/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.75, 0.95, 0.96, 1)
+theme_override_font_sizes/font_size = 19
+text = "刃契者 · 回廊游侠"
+
+[node name="PlayerHealthLabel" type="Label" parent="Hud/HudRoot/PlayerPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.73, 0.45, 1)
+text = "100 / 100"
+
+[node name="PlayerHealthBar" type="ProgressBar" parent="Hud/HudRoot/PlayerPanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 17)
+layout_mode = 2
+value = 100.0
+show_percentage = false
+theme_override_styles/background = SubResource("HealthBackground")
+theme_override_styles/fill = SubResource("HealthFill")
+
+[node name="Resource" type="Label" parent="Hud/HudRoot/PlayerPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.28, 0.86, 0.95, 1)
+theme_override_font_sizes/font_size = 13
+text = "余烬共鸣  ◆ ◆ ◆"
+
+[node name="ObjectivePanel" type="PanelContainer" parent="Hud/HudRoot"]
+offset_left = 440.0
+offset_top = 22.0
+offset_right = 840.0
+offset_bottom = 70.0
+theme_override_styles/panel = SubResource("PanelMain")
+
+[node name="ObjectiveLabel" type="Label" parent="Hud/HudRoot/ObjectivePanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.94, 0.95, 1)
+theme_override_font_sizes/font_size = 17
+text = "任务 · 清除熔炉守卫  0 / 2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="EnemyPanel" type="PanelContainer" parent="Hud/HudRoot"]
+offset_left = 924.0
+offset_top = 22.0
+offset_right = 1256.0
+offset_bottom = 136.0
+theme_override_styles/panel = SubResource("PanelWarm")
+
+[node name="Margin" type="MarginContainer" parent="Hud/HudRoot/EnemyPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="Hud/HudRoot/EnemyPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ShieldName" type="Label" parent="Hud/HudRoot/EnemyPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.67, 0.35, 1)
+text = "熔炉盾卫 · 精英"
+
+[node name="ShieldHealthBar" type="ProgressBar" parent="Hud/HudRoot/EnemyPanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 13)
+layout_mode = 2
+show_percentage = false
+theme_override_styles/background = SubResource("HealthBackground")
+theme_override_styles/fill = SubResource("EnemyFill")
+
+[node name="SpiderName" type="Label" parent="Hud/HudRoot/EnemyPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.67, 0.35, 1)
+text = "余烬机械蛛"
+
+[node name="SpiderHealthBar" type="ProgressBar" parent="Hud/HudRoot/EnemyPanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 13)
+layout_mode = 2
+show_percentage = false
+theme_override_styles/background = SubResource("HealthBackground")
+theme_override_styles/fill = SubResource("EnemyFill")
+
+[node name="ControlsPanel" type="PanelContainer" parent="Hud/HudRoot"]
+offset_left = 24.0
+offset_top = 622.0
+offset_right = 420.0
+offset_bottom = 696.0
+theme_override_styles/panel = SubResource("PanelMain")
+
+[node name="Controls" type="Label" parent="Hud/HudRoot/ControlsPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.67, 0.82, 0.84, 1)
+theme_override_font_sizes/font_size = 13
+text = "WASD  移动     J  三连斩     U  破线突\nK  跳跃        L  闪避       R  重试"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SkillBar" type="PanelContainer" parent="Hud/HudRoot"]
+offset_left = 465.0
+offset_top = 620.0
+offset_right = 815.0
+offset_bottom = 704.0
+theme_override_styles/panel = SubResource("PanelMain")
+
+[node name="Margin" type="MarginContainer" parent="Hud/HudRoot/SkillBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 6
+
+[node name="Icons" type="HBoxContainer" parent="Hud/HudRoot/SkillBar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Slot1" type="VBoxContainer" parent="Hud/HudRoot/SkillBar/Margin/Icons"]
+layout_mode = 2
+
+[node name="SkillIcon1" type="TextureRect" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot1"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+texture_filter = 1
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Key" type="Label" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.96, 1, 1)
+text = "J"
+horizontal_alignment = 1
+
+[node name="Slot2" type="VBoxContainer" parent="Hud/HudRoot/SkillBar/Margin/Icons"]
+layout_mode = 2
+
+[node name="SkillIcon2" type="TextureRect" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+texture_filter = 1
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Key" type="Label" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot2"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.78, 0.42, 1)
+text = "U"
+horizontal_alignment = 1
+
+[node name="Slot3" type="VBoxContainer" parent="Hud/HudRoot/SkillBar/Margin/Icons"]
+layout_mode = 2
+
+[node name="SkillIcon3" type="TextureRect" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot3"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+texture_filter = 1
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Key" type="Label" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot3"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.6, 0.62, 1)
+text = "待解锁"
+horizontal_alignment = 1
+
+[node name="Slot4" type="VBoxContainer" parent="Hud/HudRoot/SkillBar/Margin/Icons"]
+layout_mode = 2
+
+[node name="SkillIcon4" type="TextureRect" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot4"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+texture_filter = 1
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Key" type="Label" parent="Hud/HudRoot/SkillBar/Margin/Icons/Slot4"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.6, 0.62, 1)
+text = "待解锁"
+horizontal_alignment = 1
+
+[node name="CombatStatusLabel" type="Label" parent="Hud/HudRoot"]
+unique_name_in_owner = true
+offset_left = 486.0
+offset_top = 570.0
+offset_right = 794.0
+offset_bottom = 610.0
+theme_override_colors/font_color = Color(0.64, 0.94, 0.98, 1)
+theme_override_font_sizes/font_size = 19
+text = "进入战斗"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TitleLayer" type="CanvasLayer" parent="."]
+layer = 20
+
+[node name="TitleRoot" type="Control" parent="TitleLayer"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="TextureRect" parent="TitleLayer/TitleRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("4_title")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Shade" type="ColorRect" parent="TitleLayer/TitleRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.018, 0.025, 0.34)
+
+[node name="TitleBlock" type="VBoxContainer" parent="TitleLayer/TitleRoot"]
+offset_left = 70.0
+offset_top = 102.0
+offset_right = 560.0
+offset_bottom = 536.0
+theme_override_constants/separation = 12
+
+[node name="Eyebrow" type="Label" parent="TitleLayer/TitleRoot/TitleBlock"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.31, 0.88, 0.94, 1)
+theme_override_font_sizes/font_size = 16
+text = "EMBER CORRIDOR · VISUAL VERTICAL SLICE"
+
+[node name="Title" type="Label" parent="TitleLayer/TitleRoot/TitleBlock"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.97, 0.96, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.75)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 62
+text = "余烬回廊"
+
+[node name="Subtitle" type="Label" parent="TitleLayer/TitleRoot/TitleBlock"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.59, 0.24, 1)
+theme_override_font_sizes/font_size = 23
+text = "熔炉回响 · 单房间可玩竖切"
+
+[node name="Divider" type="HSeparator" parent="TitleLayer/TitleRoot/TitleBlock"]
+custom_minimum_size = Vector2(330, 16)
+layout_mode = 2
+
+[node name="Description" type="Label" parent="TitleLayer/TitleRoot/TitleBlock"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.84, 0.85, 1)
+theme_override_font_sizes/font_size = 16
+text = "穿过失控的熔炉回廊\n击破余烬机械与最后的盾卫"
+
+[node name="StartButton" type="Button" parent="TitleLayer/TitleRoot/TitleBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 58)
+layout_mode = 2
+size_flags_horizontal = 0
+focus_neighbor_top = NodePath(".")
+focus_neighbor_bottom = NodePath(".")
+theme_override_colors/font_color = Color(0.82, 0.98, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0.06, 0.12, 0.14, 1)
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("ButtonNormal")
+theme_override_styles/hover = SubResource("ButtonHover")
+theme_override_styles/pressed = SubResource("ButtonPressed")
+theme_override_styles/focus = SubResource("ButtonFocus")
+text = "进入熔炉回廊"
+
+[node name="Hint" type="Label" parent="TitleLayer/TitleRoot/TitleBlock"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.7, 0.72, 1)
+text = "Enter / J / 鼠标确认"
+
+[node name="Version" type="Label" parent="TitleLayer/TitleRoot"]
+offset_left = 70.0
+offset_top = 665.0
+offset_right = 500.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.54, 0.67, 0.68, 1)
+text = "视觉纠偏构建 · 非 DNF 正式方向基准"
+
+[node name="EndLayer" type="CanvasLayer" parent="."]
+layer = 30
+
+[node name="EndRoot" type="Control" parent="EndLayer"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shade" type="ColorRect" parent="EndLayer/EndRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.005, 0.012, 0.016, 0.7)
+
+[node name="Panel" type="PanelContainer" parent="EndLayer/EndRoot"]
+offset_left = 385.0
+offset_top = 194.0
+offset_right = 895.0
+offset_bottom = 526.0
+theme_override_styles/panel = SubResource("EndPanel")
+
+[node name="Margin" type="MarginContainer" parent="EndLayer/EndRoot/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 34
+theme_override_constants/margin_right = 38
+theme_override_constants/margin_bottom = 32
+
+[node name="VBox" type="VBoxContainer" parent="EndLayer/EndRoot/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="EndTitle" type="Label" parent="EndLayer/EndRoot/Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.96, 0.98, 1)
+theme_override_font_sizes/font_size = 38
+text = "回廊已肃清"
+horizontal_alignment = 1
+
+[node name="EndSummary" type="Label" parent="EndLayer/EndRoot/Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.81, 0.82, 1)
+theme_override_font_sizes/font_size = 16
+text = "熔炉守卫已清除"
+horizontal_alignment = 1
+
+[node name="RetryButton" type="Button" parent="EndLayer/EndRoot/Panel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(270, 54)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0.82, 0.98, 1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("ButtonNormal")
+theme_override_styles/hover = SubResource("ButtonHover")
+theme_override_styles/pressed = SubResource("ButtonPressed")
+theme_override_styles/focus = SubResource("ButtonFocus")
+text = "重新挑战"
+
+[node name="Hint" type="Label" parent="EndLayer/EndRoot/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.66, 0.67, 1)
+text = "R / Enter"
+horizontal_alignment = 1

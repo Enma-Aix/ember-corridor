@@ -3,8 +3,14 @@ extends Node2D
 const StateMachineModelScript := preload(
 	"res://scripts/combat/state_machine_model.gd"
 )
-const AttackTimelineModelScript := preload(
-	"res://scripts/combat/attack_timeline_model.gd"
+const InputBufferModelScript := preload(
+	"res://scripts/combat/input_buffer_model.gd"
+)
+const NormalAttackComboModelScript := preload(
+	"res://scripts/combat/normal_attack_combo_model.gd"
+)
+const LinebreakerSkillModelScript := preload(
+	"res://scripts/combat/linebreaker_skill_model.gd"
 )
 const HitResolverModelScript := preload(
 	"res://scripts/combat/hit_resolver_model.gd"
@@ -13,8 +19,16 @@ const DamagePacketScript := preload("res://scripts/combat/damage_packet.gd")
 const DamageResolverModelScript := preload(
 	"res://scripts/combat/damage_resolver_model.gd"
 )
+const HitFeedbackRequestScript := preload(
+	"res://scripts/combat/hit_feedback_request.gd"
+)
 const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
-const PreviewAttackDefinition := preload("res://data/attacks/dev_launcher.tres")
+const PreviewAttackA1 := preload("res://data/attacks/dev_a1.tres")
+const PreviewAttackA2 := preload("res://data/attacks/dev_a2.tres")
+const PreviewAttackA3 := preload("res://data/attacks/dev_a3.tres")
+const PreviewLinebreakerSkill := preload(
+	"res://data/skills/bladebound_linebreaker.tres"
+)
 const PreviewNormalReactionProfile := preload(
 	"res://data/combat/reaction_profiles/normal.tres"
 )
@@ -29,6 +43,18 @@ const PreviewLauncherProfile := preload(
 )
 const PreviewGroundPursuitProfile := preload(
 	"res://data/combat/launch_profiles/dev_ground_pursuit.tres"
+)
+const PreviewLightFeedbackProfile := preload(
+	"res://data/combat/feedback_profiles/light.tres"
+)
+const PreviewMediumFeedbackProfile := preload(
+	"res://data/combat/feedback_profiles/medium.tres"
+)
+const PreviewHeavyFeedbackProfile := preload(
+	"res://data/combat/feedback_profiles/heavy.tres"
+)
+const PreviewFinisherFeedbackProfile := preload(
+	"res://data/combat/feedback_profiles/finisher.tres"
 )
 
 const PREVIEW_BASE_ATTACK := 100.0
@@ -53,9 +79,19 @@ const DUMMY_MAXIMUM_HIT_HEIGHT := 56.0
 @onready var active_label: Label = %ActiveLabel
 @onready var recovery_segment: PanelContainer = %RecoverySegment
 @onready var recovery_label: Label = %RecoveryLabel
+@onready var timeline_title: Label = %TimelineTitle
 @onready var timeline_status_label: Label = %TimelineStatusLabel
 @onready var cancel_windows_label: Label = %CancelWindowsLabel
+@onready var input_buffer_label: Label = %InputBufferLabel
 @onready var hit_contact_label: Label = %HitContactLabel
+@onready var feedback_status_label: Label = %FeedbackStatusLabel
+@onready var hit_feedback_service: HitFeedbackService = %HitFeedbackService
+@onready var hit_feedback_presenter: HitFeedbackPresenter = %HitFeedbackPresenter
+@onready var player_visual_root: Node2D = player.get_node("VisualRoot") as Node2D
+@onready var player_body: Polygon2D = player.get_node("VisualRoot/Body") as Polygon2D
+@onready var attack_trail: Polygon2D = (
+	player.get_node("VisualRoot/AttackTrail") as Polygon2D
+)
 @onready var player_hurtbox: HurtboxComponent = (
 	player.get_node("Hurtbox") as HurtboxComponent
 )
@@ -67,10 +103,14 @@ const DUMMY_MAXIMUM_HIT_HEIGHT := 56.0
 
 var elevation_component: ElevationComponent
 var attack_definition: AttackDefinition
-var attack_timeline: AttackTimelineModel = AttackTimelineModelScript.new()
+var input_buffer: InputBufferModel = InputBufferModelScript.new()
+var normal_attack_combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+var linebreaker_skill: LinebreakerSkillModel = LinebreakerSkillModelScript.new()
+var attack_timeline: AttackTimelineModel
 var hit_resolver: HitResolverModel = HitResolverModelScript.new()
 var damage_resolver: DamageResolverModel = DamageResolverModelScript.new()
 var _attack_sequence := 0
+var _attack_facing_sign := 1
 var _current_hit_id: StringName = &""
 var _accepted_contact_count := 0
 var _duplicate_contact_count := 0
@@ -83,36 +123,57 @@ var _critical_preview_count := 0
 var _combatants: Dictionary[int, CombatantModel] = {}
 var _launch_profiles: Dictionary[StringName, CombatLaunchProfile] = {}
 var _dummy_visual_base_y: Dictionary[int, float] = {}
+var _current_normal_attack_hit := false
 
 
 func _ready() -> void:
 	elevation_component = player.get_node("Elevation") as ElevationComponent
 	debug_panel.visible = OS.is_debug_build()
 	attack_timeline_panel.visible = OS.is_debug_build()
+	feedback_status_label.visible = OS.is_debug_build()
 	GameLog.info(&"MovementSandbox", "MOV-001 sandbox ready")
 	GameLog.info(&"ElevationSandbox", "MOV-002 sandbox ready")
 	GameLog.info(&"DodgeSandbox", "MOV-003 sandbox ready")
 	_verify_state_machine_core()
+	_configure_normal_attack_combo()
+	_configure_linebreaker_skill()
 	_configure_attack_timeline_preview()
 	_configure_hit_detection_preview()
 	_configure_damage_preview()
+	_configure_hit_feedback_preview()
 	_configure_combatant_preview()
 
 
 func _physics_process(_delta: float) -> void:
 	_advance_combatant_preview()
 	_sync_player_hurtbox()
-	if Input.is_action_just_pressed(&"attack") and not attack_timeline.is_running:
-		var start_errors := attack_timeline.start(attack_definition)
-		for message: String in start_errors:
-			push_error("[CMB-002] %s" % message)
-		if start_errors.is_empty():
-			_start_attack_hitbox()
-	if attack_timeline.is_running:
-		attack_timeline.advance_tick()
+	input_buffer.advance_tick()
+	if Input.is_action_just_pressed(&"attack"):
+		input_buffer.record_pressed(&"attack")
+	if Input.is_action_just_released(&"attack"):
+		input_buffer.record_released(&"attack")
+	if Input.is_action_just_pressed(&"skill_1"):
+		input_buffer.record_pressed(&"skill_1")
+	if Input.is_action_just_released(&"skill_1"):
+		input_buffer.record_released(&"skill_1")
+	if linebreaker_skill.is_active() and Input.is_action_just_pressed(&"dodge"):
+		input_buffer.record_pressed(&"dodge")
+	if linebreaker_skill.is_active() and Input.is_action_just_released(&"dodge"):
+		input_buffer.record_released(&"dodge")
+
+	if linebreaker_skill.is_active():
+		var skill_displacement := linebreaker_skill.advance_tick(input_buffer)
+		if not player.queue_action_displacement(skill_displacement):
+			push_error("[CMB-009] linebreaker produced invalid displacement")
+		_resolve_linebreaker_cancel()
+	else:
+		normal_attack_combo.advance_tick(input_buffer, not player.is_dodging())
+		_try_start_linebreaker_from_buffer()
+	if attack_timeline != null and attack_timeline.is_running:
 		_sync_attack_hitbox()
 	elif player_hitbox.is_active:
 		player_hitbox.deactivate()
+	_sync_attack_visual()
 	_update_attack_timeline_preview()
 
 
@@ -134,7 +195,8 @@ func _process(_delta: float) -> void:
 		+ "Dodge: %s · tick %d\n"
 		+ "Invulnerable: %s\n"
 		+ "Dodge cooldown: %d\n"
-		+ "Dodge direction: (%.2f, %.2f)"
+		+ "Dodge direction: (%.2f, %.2f)\n"
+		+ "Linebreaker: %s"
 	)
 	movement_label.text = debug_text % [
 		player.global_position.x,
@@ -154,7 +216,13 @@ func _process(_delta: float) -> void:
 		player.dodge_cooldown_ticks(),
 		player.dodge_direction().x,
 		player.dodge_direction().y,
+		(
+			"tick %d" % linebreaker_skill.timeline.action_tick
+			if linebreaker_skill.is_active()
+			else "idle"
+		),
 	]
+	_update_feedback_status_label()
 
 
 func _verify_state_machine_core() -> void:
@@ -173,8 +241,49 @@ func _verify_state_machine_core() -> void:
 	GameLog.info(&"StateMachineSandbox", "CMB-001 core ready")
 
 
+func _configure_normal_attack_combo() -> void:
+	var buffer_errors := input_buffer.configure(InputBufferModel.DEFAULT_BUFFER_TICKS)
+	for message: String in buffer_errors:
+		push_error("[CMB-007] %s" % message)
+	var attack_sequence: Array[AttackDefinition] = [
+		PreviewAttackA1 as AttackDefinition,
+		PreviewAttackA2 as AttackDefinition,
+		PreviewAttackA3 as AttackDefinition,
+	]
+	var combo_errors := normal_attack_combo.configure(attack_sequence)
+	for message: String in combo_errors:
+		push_error("[CMB-008] %s" % message)
+	if not buffer_errors.is_empty() or not combo_errors.is_empty():
+		set_physics_process(false)
+		return
+	normal_attack_combo.attack_started.connect(_on_normal_attack_started)
+	normal_attack_combo.attack_finished.connect(_on_normal_attack_finished)
+	normal_attack_combo.attack_start_rejected.connect(_on_normal_attack_start_rejected)
+	attack_timeline = normal_attack_combo.timeline
+	attack_definition = normal_attack_combo.sequence_attack(0)
+	GameLog.info(&"InputBufferSandbox", "CMB-007 input buffer ready")
+	GameLog.info(&"NormalComboSandbox", "CMB-008 three-hit combo ready")
+
+
+func _configure_linebreaker_skill() -> void:
+	var source_skill := PreviewLinebreakerSkill as SkillDefinition
+	if source_skill == null:
+		push_error("[CMB-009] linebreaker SkillDefinition could not be loaded")
+		set_physics_process(false)
+		return
+	var configuration_errors := linebreaker_skill.configure(source_skill)
+	for message: String in configuration_errors:
+		push_error("[CMB-009] %s" % message)
+	if not configuration_errors.is_empty():
+		set_physics_process(false)
+		return
+	linebreaker_skill.skill_started.connect(_on_linebreaker_started)
+	linebreaker_skill.skill_finished.connect(_on_linebreaker_finished)
+	linebreaker_skill.skill_start_rejected.connect(_on_linebreaker_start_rejected)
+	GameLog.info(&"LinebreakerSandbox", "CMB-009 linebreaker ready")
+
+
 func _configure_attack_timeline_preview() -> void:
-	attack_definition = PreviewAttackDefinition as AttackDefinition
 	if attack_definition == null:
 		push_error("[CMB-002] preview AttackDefinition could not be loaded")
 		return
@@ -184,6 +293,14 @@ func _configure_attack_timeline_preview() -> void:
 			push_error("[CMB-002] %s" % message)
 		return
 
+	_render_attack_definition_preview()
+	_update_attack_timeline_preview()
+	GameLog.info(&"AttackTimelineSandbox", "CMB-002 timeline ready")
+
+
+func _render_attack_definition_preview() -> void:
+	if attack_definition == null:
+		return
 	const PIXELS_PER_TICK := 18.0
 	startup_segment.custom_minimum_size.x = (
 		float(attack_definition.startup_ticks) * PIXELS_PER_TICK
@@ -217,8 +334,19 @@ func _configure_attack_timeline_preview() -> void:
 			]
 		)
 	cancel_windows_label.text = "Cancel: %s" % " · ".join(cancel_summaries)
-	_update_attack_timeline_preview()
-	GameLog.info(&"AttackTimelineSandbox", "CMB-002 timeline ready")
+	if linebreaker_skill.is_active():
+		timeline_title.text = (
+			"CMB-009 · 破线突 · %s"
+			% String(attack_definition.definition_id)
+		)
+		return
+	var display_index := normal_attack_combo.combo_index + 1
+	if display_index < 1:
+		display_index = _sequence_index_for_attack(attack_definition) + 1
+	timeline_title.text = (
+		"CMB-008 · A%d · %s"
+		% [display_index, String(attack_definition.definition_id)]
+	)
 
 
 func _configure_hit_detection_preview() -> void:
@@ -247,6 +375,24 @@ func _configure_damage_preview() -> void:
 		push_error("[CMB-004] preview formula baseline did not resolve to 88")
 		return
 	GameLog.info(&"DamageSandbox", "CMB-004 formula ready")
+
+
+func _configure_hit_feedback_preview() -> void:
+	var profiles: Array[HitFeedbackProfile] = [
+		PreviewLightFeedbackProfile as HitFeedbackProfile,
+		PreviewMediumFeedbackProfile as HitFeedbackProfile,
+		PreviewHeavyFeedbackProfile as HitFeedbackProfile,
+		PreviewFinisherFeedbackProfile as HitFeedbackProfile,
+	]
+	var errors := hit_feedback_service.configure(profiles)
+	errors.append_array(hit_feedback_presenter.bind_service(hit_feedback_service))
+	for message: String in errors:
+		push_error("[CMB-010] %s" % message)
+	if not errors.is_empty():
+		set_physics_process(false)
+		return
+	_update_feedback_status_label()
+	GameLog.info(&"HitFeedbackSandbox", "CMB-010 feedback service ready")
 
 
 func _configure_combatant_preview() -> void:
@@ -323,6 +469,8 @@ func _configure_combatant_preview() -> void:
 
 
 func _start_attack_hitbox() -> void:
+	if player_hitbox.is_active:
+		player_hitbox.deactivate()
 	_attack_sequence += 1
 	_current_hit_id = StringName(
 		"%d:%s:%d"
@@ -333,19 +481,34 @@ func _start_attack_hitbox() -> void:
 		_current_hit_id,
 		player.get_instance_id(),
 		&"player",
-		player.facing_sign(),
+		_attack_facing_sign,
 		elevation_component.elevation()
 	)
 	for message: String in hitbox_errors:
 		push_error("[CMB-003] %s" % message)
 	if not hitbox_errors.is_empty():
-		attack_timeline.reset()
+		_rollback_failed_attack_start()
+
+
+func _rollback_failed_attack_start() -> void:
+	if player_hitbox.is_active:
+		player_hitbox.deactivate()
+	if linebreaker_skill.is_active():
+		linebreaker_skill.reset()
+		player.end_action_motion()
+	else:
+		normal_attack_combo.reset()
+	_current_normal_attack_hit = false
+	player.set_facing_locked(false)
+	attack_timeline = normal_attack_combo.timeline
+	attack_definition = normal_attack_combo.sequence_attack(0)
+	_render_attack_definition_preview()
 
 
 func _sync_attack_hitbox() -> void:
 	if not player_hitbox.is_active:
 		return
-	player_hitbox.set_facing_sign(player.facing_sign())
+	player_hitbox.set_facing_sign(_attack_facing_sign)
 	player_hitbox.set_action_tick(attack_timeline.action_tick)
 	player_hitbox.set_contact_enabled(attack_timeline.is_hitbox_active())
 
@@ -356,8 +519,121 @@ func _sync_player_hurtbox() -> void:
 	player_hurtbox.set_invulnerable(player.is_dodge_invulnerable())
 
 
+func _on_normal_attack_started(
+	new_attack: AttackDefinition,
+	_combo_index: int
+) -> void:
+	attack_definition = new_attack
+	attack_timeline = normal_attack_combo.timeline
+	_attack_facing_sign = player.facing_sign()
+	_current_normal_attack_hit = false
+	player.set_facing_locked(true)
+	_render_attack_definition_preview()
+	_start_attack_hitbox()
+
+
+func _on_normal_attack_finished(
+	_attack_id: StringName,
+	_combo_index: int,
+	_reason: StringName
+) -> void:
+	if player_hitbox.is_active:
+		player_hitbox.deactivate()
+	_current_normal_attack_hit = false
+	player.set_facing_locked(false)
+
+
+func _on_normal_attack_start_rejected(errors: PackedStringArray) -> void:
+	for message: String in errors:
+		push_error("[CMB-008] %s" % message)
+
+
+func _try_start_linebreaker_from_buffer() -> void:
+	if (
+		linebreaker_skill.is_active()
+		or player.is_dodging()
+		or not elevation_component.is_grounded()
+		or not input_buffer.has_buffered_press(&"skill_1")
+	):
+		return
+	if normal_attack_combo.timeline.is_running:
+		if (
+			not _current_normal_attack_hit
+			or not normal_attack_combo.can_cancel_to(&"action.skill_1")
+		):
+			return
+		if not input_buffer.consume(&"skill_1"):
+			return
+		if not normal_attack_combo.cancel_to(&"action.skill_1"):
+			push_error("[CMB-009] declared normal-to-skill cancel was rejected")
+			return
+	elif not input_buffer.consume(&"skill_1"):
+		return
+	if not linebreaker_skill.try_start(player.facing_sign()):
+		push_error("[CMB-009] buffered linebreaker start was rejected")
+
+
+func _resolve_linebreaker_cancel() -> void:
+	if linebreaker_skill.last_finish_reason != LinebreakerSkillModel.FINISH_CANCELED:
+		return
+	match linebreaker_skill.last_cancel_target:
+		&"action.attack":
+			if not normal_attack_combo.start_first_attack_immediately():
+				push_error("[CMB-009] linebreaker could not cancel into A1")
+		&"action.dodge":
+			if not player.try_start_dodge(Vector2.ZERO):
+				push_error("[CMB-009] linebreaker could not cancel into dodge")
+		_:
+			push_error(
+				"[CMB-009] unsupported cancel target: %s"
+				% String(linebreaker_skill.last_cancel_target)
+			)
+
+
+func _on_linebreaker_started(
+	_skill_id: StringName,
+	new_attack: AttackDefinition
+) -> void:
+	var movement_profile := linebreaker_skill.movement_profile
+	if (
+		movement_profile == null
+		or not player.begin_action_motion(movement_profile.blocking_collision_mask)
+	):
+		push_error("[CMB-009] player could not enter linebreaker motion")
+		linebreaker_skill.reset()
+		return
+	attack_definition = new_attack
+	attack_timeline = linebreaker_skill.timeline
+	_attack_facing_sign = player.facing_sign()
+	_current_normal_attack_hit = false
+	player.set_facing_locked(true)
+	_render_attack_definition_preview()
+	_start_attack_hitbox()
+
+
+func _on_linebreaker_finished(
+	_skill_id: StringName,
+	_reason: StringName,
+	_cancel_target: StringName
+) -> void:
+	if player_hitbox.is_active:
+		player_hitbox.deactivate()
+	player.end_action_motion()
+	player.set_facing_locked(false)
+	attack_timeline = normal_attack_combo.timeline
+	attack_definition = normal_attack_combo.sequence_attack(0)
+	_render_attack_definition_preview()
+
+
+func _on_linebreaker_start_rejected(errors: PackedStringArray) -> void:
+	for message: String in errors:
+		push_error("[CMB-009] %s" % message)
+
+
 func _on_hit_accepted(contact: HitContact) -> void:
 	_accepted_contact_count += 1
+	if normal_attack_combo.timeline.is_running:
+		_current_normal_attack_hit = true
 	var target: CombatantModel = _combatants.get(contact.target_instance_id)
 	if target == null or not target.can_receive_hit():
 		push_error("[CMB-005] accepted contact has no available target combatant")
@@ -389,6 +665,7 @@ func _on_hit_accepted(contact: HitContact) -> void:
 		)
 		_update_hit_contact_label()
 		return
+	_request_hit_feedback(contact, packet, applied_result, target)
 	_resolved_damage_count += 1
 	_total_preview_damage += applied_result.final_damage
 	if _resolved_damage_count == 1:
@@ -404,6 +681,35 @@ func _on_hit_accepted(contact: HitContact) -> void:
 		if target_hurtbox != null:
 			target_hurtbox.set_accepting_hits(false)
 	_update_hit_contact_label()
+
+
+func _request_hit_feedback(
+	contact: HitContact,
+	packet: DamagePacket,
+	result: HitResult,
+	target: CombatantModel
+) -> void:
+	var target_hurtbox := _target_hurtbox(contact.target_instance_id)
+	if target_hurtbox == null:
+		push_error("[CMB-010] accepted feedback has no target Hurtbox")
+		return
+	var target_root := target_hurtbox.get_parent() as Node2D
+	if target_root == null:
+		push_error("[CMB-010] target Hurtbox parent is not a Node2D")
+		return
+	var impact_position := (
+		target_root.global_position
+		+ Vector2(0.0, -22.0 - target.elevation)
+	)
+	var request: HitFeedbackRequest = HitFeedbackRequestScript.from_outcome(
+		contact,
+		result,
+		impact_position,
+		packet.direction
+	)
+	var errors := hit_feedback_service.request_feedback(request)
+	for message: String in errors:
+		push_error("[CMB-010] %s" % message)
 
 
 func _on_hit_rejected(_contact: HitContact, reason_code: StringName) -> void:
@@ -440,7 +746,7 @@ func _build_preview_damage_packet() -> DamagePacket:
 		PREVIEW_CRIT_CHANCE,
 		PREVIEW_CRIT_MULTIPLIER,
 		PREVIEW_CRITICAL_ROLL,
-		Vector2(float(player.facing_sign()), 0.0)
+		Vector2(float(_attack_facing_sign), 0.0)
 	)
 
 
@@ -535,10 +841,99 @@ func _combatant_preview_summary() -> String:
 	]
 
 
+func _update_feedback_status_label() -> void:
+	if feedback_status_label == null or not feedback_status_label.visible:
+		return
+	var sfx_label := (
+		"idle"
+		if hit_feedback_presenter.last_sfx_cue == &""
+		else "%s × %d"
+		% [
+			String(hit_feedback_presenter.last_sfx_cue),
+			hit_feedback_presenter.last_sfx_layer_count,
+		]
+	)
+	feedback_status_label.text = (
+		"CMB-010 Feedback · requests %d\n"
+		+ "Hit Stop: %d tick remaining\n"
+		+ "Camera: %.1f px · %d tick · zoom %.1f%%\n"
+		+ "VFX: %d total · %d active\n"
+		+ "SFX: %d total · %s"
+	) % [
+		hit_feedback_service.request_count,
+		hit_feedback_service.hit_stop_ticks_remaining,
+		hit_feedback_service.camera_shake_pixels,
+		hit_feedback_service.camera_ticks_remaining,
+		hit_feedback_service.camera_zoom_pulse * 100.0,
+		hit_feedback_presenter.vfx_request_count,
+		hit_feedback_presenter.active_vfx_count,
+		hit_feedback_presenter.sfx_request_count,
+		sfx_label,
+	]
+
+
 func _phase_segment_label(title: String, tick_range: Vector2i) -> String:
 	if tick_range == Vector2i.ZERO:
 		return "%s\nnone" % title
 	return "%s\n%d-%d" % [title, tick_range.x, tick_range.y]
+
+
+func _sequence_index_for_attack(definition: AttackDefinition) -> int:
+	if definition == null:
+		return 0
+	for index: int in normal_attack_combo.sequence_size():
+		var candidate := normal_attack_combo.sequence_attack(index)
+		if candidate != null and candidate.definition_id == definition.definition_id:
+			return index
+	return 0
+
+
+func _sync_attack_visual() -> void:
+	if attack_trail == null or player_visual_root == null or player_body == null:
+		return
+	if attack_timeline == null or not attack_timeline.is_running:
+		attack_trail.visible = false
+		player_visual_root.rotation = 0.0
+		player_body.self_modulate = Color.WHITE
+		return
+	var stage := normal_attack_combo.combo_index
+	var progress := (
+		float(attack_timeline.action_tick)
+		/ maxf(float(attack_timeline.total_ticks()), 1.0)
+	)
+	attack_trail.visible = attack_timeline.is_hitbox_active()
+	if linebreaker_skill.is_active():
+		attack_trail.rotation = lerpf(-0.12, 0.08, progress)
+		attack_trail.scale = Vector2(1.7, 0.68)
+		attack_trail.color = Color(0.2, 0.9, 1.0, 0.88)
+		player_visual_root.rotation = lerpf(-0.16, 0.06, progress)
+		player_body.self_modulate = (
+			Color(0.72, 1.18, 1.2, 1.0)
+			if attack_timeline.is_hitbox_active()
+			else Color(0.86, 1.06, 1.1, 1.0)
+		)
+		return
+	match stage:
+		0:
+			attack_trail.rotation = lerpf(-0.6, 0.35, progress)
+			attack_trail.scale = Vector2(1.0, 0.82)
+			attack_trail.color = Color(1.0, 0.42, 0.08, 0.78)
+			player_visual_root.rotation = lerpf(-0.08, 0.08, progress)
+		1:
+			attack_trail.rotation = lerpf(0.65, -0.45, progress)
+			attack_trail.scale = Vector2(1.18, 1.08)
+			attack_trail.color = Color(0.22, 0.82, 1.0, 0.75)
+			player_visual_root.rotation = lerpf(0.12, -0.1, progress)
+		2:
+			attack_trail.rotation = lerpf(0.45, -1.05, progress)
+			attack_trail.scale = Vector2(1.12, 1.34)
+			attack_trail.color = Color(1.0, 0.72, 0.2, 0.9)
+			player_visual_root.rotation = lerpf(0.16, -0.16, progress)
+	player_body.self_modulate = (
+		Color(1.16, 1.08, 0.94, 1.0)
+		if attack_timeline.is_hitbox_active()
+		else Color.WHITE
+	)
 
 
 func _update_attack_timeline_preview() -> void:
@@ -546,24 +941,53 @@ func _update_attack_timeline_preview() -> void:
 		return
 	if attack_timeline.total_ticks() == 0:
 		timeline_status_label.text = (
-			"Preview: idle · press J / XInput X · total %d tick"
-			% attack_definition.total_ticks()
+			"Combo: idle · press J / XInput X · A1 total %d tick"
+			% normal_attack_combo.sequence_attack(0).total_ticks()
 		)
+		input_buffer_label.text = "CMB-007 Buffer: empty · capacity 8 tick"
 		_set_timeline_highlight(AttackDefinition.TimelinePhase.BEFORE_START)
 		return
 	var cancel_targets := attack_timeline.available_cancel_targets()
 	var cancel_text := "none" if cancel_targets.is_empty() else ", ".join(cancel_targets)
-	timeline_status_label.text = (
-		"Preview: tick %d/%d · %s · hitbox %s · cancel %s"
-		% [
-			attack_timeline.action_tick,
-			attack_timeline.total_ticks(),
-			String(attack_timeline.current_phase_name()),
-			"on" if attack_timeline.is_hitbox_active() else "off",
-			cancel_text,
-		]
+	if linebreaker_skill.is_active():
+		timeline_status_label.text = (
+			"Linebreaker: tick %d/%d · %s · travel %.1f px · cancel %s"
+			% [
+				attack_timeline.action_tick,
+				attack_timeline.total_ticks(),
+				String(attack_timeline.current_phase_name()),
+				linebreaker_skill.movement_profile.distance_pixels,
+				cancel_text,
+			]
+		)
+	else:
+		timeline_status_label.text = (
+			"Combo A%d: tick %d/%d · %s · hitbox %s · cancel %s"
+			% [
+				normal_attack_combo.combo_index + 1,
+				attack_timeline.action_tick,
+				attack_timeline.total_ticks(),
+				String(attack_timeline.current_phase_name()),
+				"on" if attack_timeline.is_hitbox_active() else "off",
+				cancel_text,
+			]
+		)
+	var pending_summaries := PackedStringArray()
+	for action: StringName in input_buffer.pending_actions():
+		pending_summaries.append(
+			"%s age %d/7" % [String(action), input_buffer.input_age_ticks(action)]
+		)
+	input_buffer_label.text = (
+		"CMB-007 Buffer: %s" % " · ".join(pending_summaries)
+		if not pending_summaries.is_empty()
+		else "CMB-007 Buffer: empty · capacity 8 tick"
 	)
 	_set_timeline_highlight(attack_timeline.current_phase)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and input_buffer != null:
+		input_buffer.clear()
 
 
 func _set_timeline_highlight(phase: AttackDefinition.TimelinePhase) -> void:

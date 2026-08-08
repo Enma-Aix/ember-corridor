@@ -1,10 +1,10 @@
 class_name VersionInfo
 extends RefCounted
 
-const GAME_VERSION := "0.0.1-m0"
+const GAME_VERSION := "0.1.2-visual-slice"
 const SAVE_SCHEMA_VERSION := 1
 const REQUIRED_GODOT_VERSION := "4.7.1"
-const BUILD_CHANNEL := "foundation"
+const BUILD_CHANNEL := "legacy visual slice"
 
 
 static func display_string() -> String:
@@ -22,4 +22,3 @@ static func is_expected_engine() -> bool:
 		and int(version.get("minor", -1)) == 7
 		and int(version.get("patch", -1)) == 1
 	)
-

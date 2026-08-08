@@ -1,8 +1,10 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scripts/actors/movement_sandbox.gd" id="1_sandbox"]
 [ext_resource type="PackedScene" path="res://scenes/actors/player.tscn" id="2_player"]
 [ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="3_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/hit_feedback_service.gd" id="4_feedback_service"]
+[ext_resource type="Script" path="res://scripts/presentation/hit_feedback_presenter.gd" id="5_feedback_presenter"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horizontal"]
 size = Vector2(1152, 24)
@@ -12,6 +14,9 @@ size = Vector2(24, 544)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_dummy_hurtbox"]
 size = Vector2(22, 48)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_dummy_body"]
+size = Vector2(22, 18)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0.055, 0.063, 0.085, 0.92)
@@ -52,6 +57,20 @@ corner_radius_bottom_left = 4
 
 [node name="MovementSandbox" type="Node2D"]
 script = ExtResource("1_sandbox")
+
+[node name="CombatCamera" type="Camera2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(640, 360)
+enabled = true
+
+[node name="HitFeedbackService" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("4_feedback_service")
+
+[node name="HitFeedbackPresenter" type="Node2D" parent="."]
+unique_name_in_owner = true
+script = ExtResource("5_feedback_presenter")
+camera_path = NodePath("../CombatCamera")
 
 [node name="Background" type="ColorRect" parent="."]
 offset_right = 1280.0
@@ -101,8 +120,15 @@ position = Vector2(640, 430)
 
 [node name="Targets" type="Node2D" parent="Actors"]
 
-[node name="DummyA" type="Node2D" parent="Actors/Targets"]
+[node name="DummyA" type="CharacterBody2D" parent="Actors/Targets"]
 position = Vector2(700, 430)
+collision_layer = 4
+collision_mask = 0
+motion_mode = 1
+
+[node name="BodyCollider" type="CollisionShape2D" parent="Actors/Targets/DummyA"]
+position = Vector2(0, -9)
+shape = SubResource("RectangleShape2D_dummy_body")
 
 [node name="Body" type="Polygon2D" parent="Actors/Targets/DummyA"]
 polygon = PackedVector2Array(-11, -48, 11, -48, 15, -2, 9, 10, -9, 10, -15, -2)
@@ -123,8 +149,15 @@ position = Vector2(0, -22)
 polygon = PackedVector2Array(-11, -24, 11, -24, 11, 24, -11, 24)
 color = Color(0.18, 0.7, 1, 0.22)
 
-[node name="DummyB" type="Node2D" parent="Actors/Targets"]
+[node name="DummyB" type="CharacterBody2D" parent="Actors/Targets"]
 position = Vector2(724, 430)
+collision_layer = 4
+collision_mask = 0
+motion_mode = 1
+
+[node name="BodyCollider" type="CollisionShape2D" parent="Actors/Targets/DummyB"]
+position = Vector2(0, -9)
+shape = SubResource("RectangleShape2D_dummy_body")
 
 [node name="Body" type="Polygon2D" parent="Actors/Targets/DummyB"]
 polygon = PackedVector2Array(-11, -44, 11, -44, 15, -2, 9, 10, -9, 10, -15, -2)
@@ -161,7 +194,16 @@ offset_top = 62.0
 offset_right = 1040.0
 offset_bottom = 92.0
 theme_override_colors/font_color = Color(0.7, 0.74, 0.82, 1)
-text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：浮空攻击预览"
+text = "WASD：移动 · K / A：跳跃 · L / B：闪避 · J / X：横斩 → 返斩 → 挑斩 · U / Y：破线突"
+
+[node name="FeedbackStatusLabel" type="Label" parent="Hud"]
+unique_name_in_owner = true
+offset_left = 736.0
+offset_top = 520.0
+offset_right = 998.0
+offset_bottom = 696.0
+theme_override_colors/font_color = Color(0.42, 0.88, 1, 1)
+text = "CMB-010 Feedback\nHit Stop: idle\nCamera: idle\nVFX: 0 · SFX: 0"
 
 [node name="DebugPanel" type="PanelContainer" parent="Hud"]
 unique_name_in_owner = true
@@ -186,7 +228,7 @@ text = "Ground\nMove velocity\nFacing\nElevation\nVertical velocity\nGrounded\nH
 [node name="AttackTimelinePanel" type="PanelContainer" parent="Hud"]
 unique_name_in_owner = true
 offset_left = 32.0
-offset_top = 536.0
+offset_top = 512.0
 offset_right = 716.0
 offset_bottom = 704.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
@@ -203,9 +245,10 @@ layout_mode = 2
 theme_override_constants/separation = 5
 
 [node name="TimelineTitle" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.98, 0.72, 0.37, 1)
-text = "CMB-006 · attack.dev.launcher_placeholder"
+text = "CMB-008 · A1 · attack.dev.a1_placeholder"
 
 [node name="TimelineBar" type="HBoxContainer" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
 layout_mode = 2
@@ -259,7 +302,13 @@ text = "Preview: idle · press J / XInput X · total 20 tick"
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.82, 0.94, 1)
-text = "Cancel: tick 15-20 → action.dodge"
+text = "Cancel: tick 9-20 → action.attack · tick 15-20 → action.dodge"
+
+[node name="InputBufferLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.72, 0.37, 1)
+text = "CMB-007 Buffer: empty · capacity 8 tick"
 
 [node name="HitContactLabel" type="Label" parent="Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox"]
 unique_name_in_owner = true

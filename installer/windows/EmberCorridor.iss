@@ -1,5 +1,5 @@
 #define MyAppName "Ember Corridor"
-#define MyAppVersion "0.1.0 M1 Preview"
+#define MyAppVersion "0.1.2 Visual Slice"
 #define MyAppPublisher "Enma-Aix"
 #define MyAppExeName "EmberCorridor.exe"
 
@@ -8,12 +8,12 @@ AppId={{5E08DCE9-20B5-4F60-8C7D-66E2469C1E87}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.1.0.0
+VersionInfoVersion=0.1.2.0
 DefaultDirName={localappdata}\Programs\Ember Corridor
 DefaultGroupName=Ember Corridor
 DisableProgramGroupPage=yes
 OutputDir=..\..\build\release
-OutputBaseFilename=EmberCorridor-M1-Preview-Setup-x64
+OutputBaseFilename=EmberCorridor-0.1.2-Visual-Slice-Setup-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -34,4 +34,3 @@ Name: "{autodesktop}\Ember Corridor"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Ember Corridor"; Flags: nowait postinstall skipifsilent
-

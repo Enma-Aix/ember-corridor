@@ -5,6 +5,10 @@ const AttackDefinitionScript := preload("res://scripts/data/attack_definition.gd
 const AttackCancelWindowScript := preload(
 	"res://scripts/data/attack_cancel_window.gd"
 )
+const SkillMovementProfileScript := preload(
+	"res://scripts/data/skill_movement_profile.gd"
+)
+const SkillDefinitionScript := preload("res://scripts/data/skill_definition.gd")
 const DataRegistryScript := preload("res://scripts/core/data_registry.gd")
 const SettingsServiceScript := preload("res://scripts/core/settings_service.gd")
 const GroundMovementModelScript := preload(
@@ -17,6 +21,15 @@ const StateMachineModelScript := preload(
 )
 const AttackTimelineModelScript := preload(
 	"res://scripts/combat/attack_timeline_model.gd"
+)
+const InputBufferModelScript := preload(
+	"res://scripts/combat/input_buffer_model.gd"
+)
+const NormalAttackComboModelScript := preload(
+	"res://scripts/combat/normal_attack_combo_model.gd"
+)
+const LinebreakerSkillModelScript := preload(
+	"res://scripts/combat/linebreaker_skill_model.gd"
 )
 const HitContactScript := preload("res://scripts/combat/hit_contact.gd")
 const HitResolverModelScript := preload(
@@ -33,6 +46,12 @@ const HitResultScript := preload("res://scripts/combat/hit_result.gd")
 const DamageResolverModelScript := preload(
 	"res://scripts/combat/damage_resolver_model.gd"
 )
+const HitFeedbackRequestScript := preload(
+	"res://scripts/combat/hit_feedback_request.gd"
+)
+const HitFeedbackServiceScript := preload(
+	"res://scripts/combat/hit_feedback_service.gd"
+)
 const CombatReactionProfileScript := preload(
 	"res://scripts/data/combat_reaction_profile.gd"
 )
@@ -41,6 +60,7 @@ const CombatLaunchProfileScript := preload(
 )
 const JuggleModelScript := preload("res://scripts/combat/juggle_model.gd")
 const CombatantModelScript := preload("res://scripts/combat/combatant_model.gd")
+const VerticalSliceScene := preload("res://scenes/game/vertical_slice.tscn")
 
 var _case_results: Array[Dictionary] = []
 
@@ -79,6 +99,19 @@ func _run() -> void:
 	_record_case("attack cancel windows are inclusive and deterministic", _test_attack_cancel_windows())
 	_record_case("attack timeline advances and completes exactly once", _test_attack_timeline_progression())
 	_record_case("attack timeline start, pause, and reset boundaries", _test_attack_timeline_runtime_boundaries())
+	_record_case("input buffer expires after exactly eight fixed ticks", _test_input_buffer_expiration_boundary())
+	_record_case("input buffer records release and consumes once", _test_input_buffer_release_and_consumption())
+	_record_case("input buffer isolates actions pause and clear", _test_input_buffer_isolation_pause_and_clear())
+	_record_case("project normal combo resources preserve A1 A2 A3 data", _test_normal_combo_resource_contract())
+	_record_case("normal combo consumes early and in-window attack input", _test_normal_combo_buffered_chain())
+	_record_case("normal combo honors end and after-window boundaries", _test_normal_combo_cancel_boundaries())
+	_record_case("normal combo miss recovery reset and invalid data are stable", _test_normal_combo_recovery_and_validation())
+	_record_case("all normal attacks mirror their hitboxes left and right", _test_normal_combo_hitbox_mirroring())
+	_record_case("linebreaker Resource preserves its complete data contract", _test_linebreaker_resource_contract())
+	_record_case("linebreaker movement profile has exact mirrored tick boundaries", _test_linebreaker_movement_boundaries())
+	_record_case("linebreaker progression is deterministic and snapshot-based", _test_linebreaker_progression())
+	_record_case("linebreaker buffered cancels honor inclusive boundaries", _test_linebreaker_cancel_boundaries())
+	_record_case("normal attacks expose only declared skill cancel windows", _test_normal_to_skill_cancel_rules())
 	_record_case("project attack Resource drives the debug visualization", _test_project_attack_visualization())
 	_record_case("attack definition validates its hitbox profile", _test_attack_hitbox_profile())
 	_record_case("hit resolver deduplicates and honors rehit boundaries", _test_hit_resolver_deduplication())
@@ -89,6 +122,12 @@ func _run() -> void:
 	_record_case("Area2D contact forwards once across pause-like resume", area_contact_errors)
 	var sandbox_hitbox_errors: PackedStringArray = await _test_project_hitbox_sandbox()
 	_record_case("project sandbox applies damage to two combatant strategies once", sandbox_hitbox_errors)
+	var sandbox_combo_errors: PackedStringArray = await _test_project_normal_combo_sandbox()
+	_record_case("project sandbox chains A1 A2 A3 and launches only on A3", sandbox_combo_errors)
+	var linebreaker_collision_errors: PackedStringArray = await _test_linebreaker_collision_sandbox()
+	_record_case("linebreaker crosses EnemyBody targets but stops at WorldStatic", linebreaker_collision_errors)
+	var linebreaker_cancel_errors: PackedStringArray = await _test_linebreaker_cancel_sandbox()
+	_record_case("sandbox hit-confirm and buffered linebreaker cancels integrate", linebreaker_cancel_errors)
 	_record_case("attack definition validates its damage profile", _test_attack_damage_profile())
 	_record_case("damage packet is an immutable validated snapshot", _test_damage_packet_snapshot())
 	_record_case("damage formula handles baseline, rounding, and minimum", _test_damage_formula_baseline())
@@ -96,6 +135,14 @@ func _run() -> void:
 	_record_case("critical chance uses exact boundaries and a 60 percent cap", _test_damage_critical_boundaries())
 	_record_case("damage modifiers and rejected results are explicit", _test_damage_modifiers_and_rejections())
 	_record_case("damage resolution is deterministic, stateless, and releasable", _test_damage_determinism_and_lifecycle())
+	_record_case("feedback profiles preserve all four design budgets", _test_hit_feedback_profiles())
+	_record_case("feedback requests snapshot accepted hit outcomes", _test_hit_feedback_request_snapshot())
+	_record_case("feedback service routes hit stop camera VFX and SFX independently", _test_hit_feedback_channel_routing())
+	_record_case("hit stop overlap takes the maximum with exact tick boundaries", _test_hit_feedback_hit_stop_boundaries())
+	_record_case("camera feedback takes maximum strength with bounded extension", _test_hit_feedback_camera_merging())
+	_record_case("feedback progression is deterministic and releasable", _test_hit_feedback_determinism_and_lifecycle())
+	var feedback_sandbox_errors: PackedStringArray = await _test_hit_feedback_sandbox()
+	_record_case("sandbox hit feedback pauses and restores the scene safely", feedback_sandbox_errors)
 	_record_case("normal elite and boss reaction profiles are registered and valid", _test_combat_reaction_profiles())
 	_record_case("launch and ground-pursuit profiles are registered and valid", _test_combat_launch_profiles())
 	_record_case("normal combatants react while applying health and poise", _test_normal_combatant_reaction())
@@ -117,6 +164,8 @@ func _run() -> void:
 	_record_case("project placeholder Resource loads", _test_project_resource())
 	_record_case("export remap paths resolve to source Resources", _test_export_remap_path())
 	_record_case("release build guards the debug panel", _test_release_debug_guard())
+	var vertical_slice_errors: PackedStringArray = await _test_vertical_slice_runtime()
+	_record_case("visual vertical slice starts, fights, and reaches an end state", vertical_slice_errors)
 
 	var failure_count := 0
 	for result: Dictionary in _case_results:
@@ -140,8 +189,56 @@ func _record_case(case_name: String, errors: PackedStringArray) -> void:
 	_case_results.append({"name": case_name, "errors": errors})
 
 
+func _test_vertical_slice_runtime() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var slice := VerticalSliceScene.instantiate()
+	root.add_child(slice)
+	await process_frame
+
+	if not slice.title_root.visible or slice.hud_root.visible:
+		errors.append("vertical slice did not open on the title screen")
+	if slice._player_sprite == null or slice._player_sprite.texture == null:
+		errors.append("runtime player art was not attached")
+	if slice._enemy_sprites.size() != 2 or slice._enemy_models.size() != 2:
+		errors.append("runtime enemy art or combat models were not attached")
+	if slice.title_root.theme == null or slice.title_root.theme.default_font == null:
+		errors.append("runtime Chinese font theme was not attached")
+
+	slice._start_run()
+	await process_frame
+	if slice.title_root.visible or not slice.hud_root.visible:
+		errors.append("starting the run did not switch from title to HUD")
+	if slice.combat_core.process_mode != Node.PROCESS_MODE_INHERIT:
+		errors.append("starting the run did not enable the combat core")
+
+	var spider: CharacterBody2D = slice.spider_target
+	spider.position = slice.player.position + Vector2(40.0, 0.0)
+	var state: Dictionary = slice._enemy_states[spider]
+	state["cooldown"] = 0.0
+	slice._enemy_states[spider] = state
+	for _tick: int in 40:
+		slice._physics_process(1.0 / 60.0)
+	if slice._player_health >= slice.PLAYER_MAX_HEALTH:
+		errors.append("nearby enemy never completed its attack or damaged the player")
+
+	slice._player_health = 0
+	slice._check_outcome()
+	if not slice._run_completed or not slice.end_root.visible:
+		errors.append("zero player health did not reach the defeat state")
+	if slice.combat_core.process_mode != Node.PROCESS_MODE_DISABLED:
+		errors.append("end state did not stop the combat core")
+
+	slice.queue_free()
+	await process_frame
+	return errors
+
+
 func _test_version_pin() -> PackedStringArray:
 	var errors := PackedStringArray()
+	if VersionInfo.GAME_VERSION != "0.1.2-visual-slice":
+		errors.append("VersionInfo does not match release/VERSION")
+	if VersionInfo.BUILD_CHANNEL != "legacy visual slice":
+		errors.append("VersionInfo does not identify the legacy visual slice")
 	if VersionInfo.REQUIRED_GODOT_VERSION != "4.7.1":
 		errors.append("VersionInfo does not pin 4.7.1")
 	if not VersionInfo.is_expected_engine():
@@ -1066,6 +1163,572 @@ func _test_attack_timeline_runtime_boundaries() -> PackedStringArray:
 	return errors
 
 
+func _test_input_buffer_expiration_boundary() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	errors.append_array(buffer.configure(InputBufferModel.DEFAULT_BUFFER_TICKS))
+	if not buffer.record_pressed(&"attack"):
+		errors.append("input buffer rejected a valid attack press")
+	for _tick: int in range(7):
+		buffer.advance_tick()
+	if not buffer.has_buffered_press(&"attack"):
+		errors.append("attack press expired before the eighth buffered tick")
+	if buffer.input_age_ticks(&"attack") != 7:
+		errors.append("attack press did not report age 7 at its final valid tick")
+	buffer.advance_tick()
+	if buffer.has_buffered_press(&"attack"):
+		errors.append("attack press remained valid at age 8")
+	if not buffer.pending_actions().is_empty():
+		errors.append("expired attack press remained in pending actions")
+	return errors
+
+
+func _test_input_buffer_release_and_consumption() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	errors.append_array(buffer.configure())
+	buffer.record_pressed(&"attack")
+	buffer.advance_tick()
+	buffer.advance_tick()
+	if not buffer.record_released(&"attack"):
+		errors.append("input buffer did not record release for a pending press")
+	var pending := buffer.buffered_entry(&"attack")
+	if (
+		pending.get("pressed_tick", -1) != 0
+		or pending.get("released_tick", -1) != 2
+	):
+		errors.append("pending input did not preserve pressed/released ticks")
+	var consumed := buffer.consume(&"attack")
+	if (
+		consumed.get("pressed_tick", -1) != 0
+		or consumed.get("released_tick", -1) != 2
+		or consumed.get("consumed_tick", -1) != 2
+	):
+		errors.append("consumed input snapshot has incorrect tick metadata")
+	if not buffer.consume(&"attack").is_empty():
+		errors.append("the same buffered press was consumed more than once")
+
+	buffer.reset()
+	buffer.record_pressed(&"attack")
+	buffer.consume(&"attack")
+	for _tick: int in range(3):
+		buffer.advance_tick()
+	if not buffer.record_released(&"attack"):
+		errors.append("release after consumption was not attached to input history")
+	var history := buffer.last_event(&"attack")
+	if history.get("released_tick", -1) != 3:
+		errors.append("consumed input history did not preserve its release tick")
+	return errors
+
+
+func _test_input_buffer_isolation_pause_and_clear() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	errors.append_array(buffer.configure())
+	buffer.record_pressed(&"attack")
+	buffer.record_pressed(&"dodge")
+	for _paused_frame: int in range(240):
+		var ignored_delta := 1.0 / 30.0 if _paused_frame % 2 == 0 else 1.0 / 144.0
+		if ignored_delta <= 0.0:
+			errors.append("simulated pause delta was invalid")
+	if (
+		buffer.current_tick != 0
+		or not buffer.has_buffered_press(&"attack")
+		or not buffer.has_buffered_press(&"dodge")
+	):
+		errors.append("render frames advanced or lost fixed-tick buffered input")
+	buffer.consume(&"attack")
+	if not buffer.has_buffered_press(&"dodge"):
+		errors.append("consuming attack also removed the dodge action")
+	buffer.clear()
+	if not buffer.pending_actions().is_empty():
+		errors.append("clear did not remove pending actions")
+	var previous_capacity := buffer.buffer_ticks
+	if buffer.configure(0).is_empty():
+		errors.append("input buffer accepted zero capacity")
+	if buffer.buffer_ticks != previous_capacity:
+		errors.append("invalid buffer configuration mutated prior capacity")
+	if buffer.record_pressed(&"") or buffer.record_released(&""):
+		errors.append("input buffer accepted an empty action ID")
+	return errors
+
+
+func _load_project_normal_attack_sequence() -> Array[AttackDefinition]:
+	var result: Array[AttackDefinition] = []
+	for path: String in [
+		"res://data/attacks/dev_a1.tres",
+		"res://data/attacks/dev_a2.tres",
+		"res://data/attacks/dev_a3.tres",
+	]:
+		var attack := ResourceLoader.load(path) as AttackDefinition
+		if attack != null:
+			result.append(attack)
+	return result
+
+
+func _test_normal_combo_resource_contract() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("project did not load all three normal attack Resources")
+		return errors
+	for attack: AttackDefinition in sequence:
+		errors.append_array(attack.validation_errors())
+	if (
+		Vector3i(
+			sequence[0].startup_ticks,
+			sequence[0].active_ticks,
+			sequence[0].recovery_ticks
+		) != Vector3i(6, 3, 11)
+		or Vector3i(
+			sequence[1].startup_ticks,
+			sequence[1].active_ticks,
+			sequence[1].recovery_ticks
+		) != Vector3i(7, 3, 13)
+		or Vector3i(
+			sequence[2].startup_ticks,
+			sequence[2].active_ticks,
+			sequence[2].recovery_ticks
+		) != Vector3i(9, 4, 18)
+	):
+		errors.append("A1/A2/A3 timelines do not match the 6/3/11 7/3/13 9/4/18 baseline")
+	if (
+		sequence[0].cancel_targets_at_tick(8).has("action.attack")
+		or not sequence[0].cancel_targets_at_tick(9).has("action.attack")
+		or not sequence[0].cancel_targets_at_tick(20).has("action.attack")
+		or sequence[0].cancel_targets_at_tick(21).has("action.attack")
+	):
+		errors.append("A1 attack-chain cancel boundaries are not exactly 9 through 20")
+	if (
+		sequence[1].hitbox_size.y <= sequence[0].hitbox_size.y
+		or not sequence[1].cancel_targets_at_tick(10).has("action.attack")
+		or not sequence[1].cancel_targets_at_tick(23).has("action.attack")
+	):
+		errors.append("A2 does not preserve its wider depth and 10 through 23 chain window")
+	if (
+		sequence[2].cancel_targets_at_tick(22).has("action.attack")
+		or sequence[2].launch_profile != &"combat.launch.dev_launcher"
+		or sequence[2].hit_stop_ticks != 5
+	):
+		errors.append("A3 must finish the chain with launcher data and no A4 cancel")
+	var registry: DataRegistryService = DataRegistryScript.new()
+	errors.append_array(registry.reload_definitions("res://data"))
+	if registry.definition_count() != 15:
+		errors.append("DataRegistry did not index all fifteen project definitions")
+	for attack: AttackDefinition in sequence:
+		if registry.get_definition(attack.definition_id) == null:
+			errors.append("DataRegistry is missing %s" % String(attack.definition_id))
+	registry.free()
+	return errors
+
+
+func _test_normal_combo_buffered_chain() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("normal combo sequence could not be loaded")
+		return errors
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	var combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+	errors.append_array(buffer.configure())
+	errors.append_array(combo.configure(sequence))
+	var started_ids: Array[StringName] = []
+	var finish_reasons: Array[StringName] = []
+	combo.attack_started.connect(
+		func(attack: AttackDefinition, _index: int) -> void:
+			started_ids.append(attack.definition_id)
+	)
+	combo.attack_finished.connect(
+		func(_attack_id: StringName, _index: int, reason: StringName) -> void:
+			finish_reasons.append(reason)
+	)
+
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	if combo.combo_index != 0 or combo.timeline.action_tick != 1:
+		errors.append("initial attack press did not start A1 on tick 1")
+	buffer.advance_tick()
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	var safety := 32
+	while combo.combo_index == 0 and safety > 0:
+		buffer.advance_tick()
+		combo.advance_tick(buffer)
+		safety -= 1
+	if combo.combo_index != 1 or combo.timeline.action_tick != 1:
+		errors.append("early buffered press did not chain A1 into A2 at tick 9")
+	if buffer.last_event(&"attack").get("consumed_tick", -1) - buffer.last_event(&"attack").get("pressed_tick", -1) != 7:
+		errors.append("A1 early input was not consumed on the final valid buffer age")
+
+	buffer.advance_tick()
+	combo.advance_tick(buffer)
+	buffer.advance_tick()
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	safety = 36
+	while combo.combo_index == 1 and safety > 0:
+		buffer.advance_tick()
+		combo.advance_tick(buffer)
+		safety -= 1
+	if combo.combo_index != 2 or combo.timeline.action_tick != 1:
+		errors.append("buffered press did not chain A2 into A3 at tick 10")
+	safety = 48
+	while combo.timeline.is_running and safety > 0:
+		buffer.advance_tick()
+		combo.advance_tick(buffer)
+		safety -= 1
+	if combo.combo_index != -1 or combo.last_finish_reason != &"complete":
+		errors.append("A3 did not recover to idle after its complete timeline")
+	if started_ids.size() != 3 or finish_reasons != [&"chained", &"chained", &"complete"]:
+		errors.append("combo start/finish signals did not preserve A1 A2 A3 order")
+	return errors
+
+
+func _test_normal_combo_cancel_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("normal combo sequence could not be loaded")
+		return errors
+
+	var end_buffer: InputBufferModel = InputBufferModelScript.new()
+	var end_combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+	end_buffer.configure()
+	end_combo.configure(sequence)
+	end_buffer.record_pressed(&"attack")
+	end_combo.advance_tick(end_buffer)
+	while end_combo.timeline.action_tick < 19:
+		end_buffer.advance_tick()
+		end_combo.advance_tick(end_buffer)
+	end_buffer.advance_tick()
+	end_buffer.record_pressed(&"attack")
+	end_combo.advance_tick(end_buffer)
+	if end_combo.combo_index != 1 or end_combo.timeline.action_tick != 1:
+		errors.append("attack press on A1 cancel end tick 20 did not start A2")
+
+	var after_buffer: InputBufferModel = InputBufferModelScript.new()
+	var after_combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+	after_buffer.configure()
+	after_combo.configure(sequence)
+	after_buffer.record_pressed(&"attack")
+	after_combo.advance_tick(after_buffer)
+	while after_combo.timeline.is_running:
+		after_buffer.advance_tick()
+		after_combo.advance_tick(after_buffer)
+	after_buffer.advance_tick()
+	after_buffer.record_pressed(&"attack")
+	after_combo.advance_tick(after_buffer)
+	if after_combo.combo_index != 0 or after_combo.timeline.action_tick != 1:
+		errors.append("post-window attack did not begin a fresh A1 chain")
+	return errors
+
+
+func _test_normal_combo_recovery_and_validation() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("normal combo sequence could not be loaded")
+		return errors
+	var combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+	errors.append_array(combo.configure(sequence))
+	var invalid_sequence: Array[AttackDefinition] = [sequence[2], sequence[1]]
+	if combo.configure(invalid_sequence).is_empty():
+		errors.append("combo accepted an intermediate attack without action.attack cancel")
+	if not combo.is_configured() or combo.sequence_size() != 3:
+		errors.append("invalid reconfiguration damaged the prior valid combo")
+
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	buffer.configure()
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	while combo.timeline.is_running:
+		buffer.advance_tick()
+		combo.advance_tick(buffer)
+	if combo.combo_index != -1:
+		errors.append("an unchained miss did not recover to idle")
+	buffer.advance_tick()
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	if combo.combo_index != 0:
+		errors.append("fresh input after miss recovery did not restart at A1")
+	combo.reset()
+	if combo.combo_index != -1 or combo.timeline.is_running:
+		errors.append("combo reset did not clear its active timeline")
+	return errors
+
+
+func _test_normal_combo_hitbox_mirroring() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("normal combo sequence could not be loaded")
+		return errors
+	for index: int in sequence.size():
+		var attack := sequence[index]
+		var hitbox: HitboxComponent = HitboxComponentScript.new()
+		var collision_shape := CollisionShape2D.new()
+		collision_shape.name = "CollisionShape2D"
+		hitbox.add_child(collision_shape)
+		root.add_child(hitbox)
+		errors.append_array(
+			hitbox.activate(attack, StringName("combo.right.%d" % index), 8100 + index, &"player", 1)
+		)
+		if not is_equal_approx(hitbox.position.x, absf(attack.hitbox_offset.x)):
+			errors.append("A%d right-facing hitbox offset is incorrect" % (index + 1))
+		var rectangle := collision_shape.shape as RectangleShape2D
+		if rectangle == null or rectangle.size != attack.hitbox_size:
+			errors.append("A%d hitbox size did not come from its Resource" % (index + 1))
+		hitbox.deactivate()
+		errors.append_array(
+			hitbox.activate(attack, StringName("combo.left.%d" % index), 8200 + index, &"player", -1)
+		)
+		if not is_equal_approx(hitbox.position.x, -absf(attack.hitbox_offset.x)):
+			errors.append("A%d left-facing hitbox was not mirrored" % (index + 1))
+		hitbox.free()
+	return errors
+
+
+func _load_linebreaker_skill() -> SkillDefinition:
+	return ResourceLoader.load(
+		"res://data/skills/bladebound_linebreaker.tres"
+	) as SkillDefinition
+
+
+func _test_linebreaker_resource_contract() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var skill := _load_linebreaker_skill()
+	if skill == null:
+		errors.append("linebreaker SkillDefinition did not load")
+		return errors
+	errors.append_array(skill.validation_errors())
+	var attack := skill.primary_attack()
+	var movement := skill.movement_profile
+	if (
+		skill.definition_kind() != &"skill"
+		or skill.definition_id != &"skill.bladebound.linebreaker"
+		or not is_equal_approx(skill.cooldown_seconds, 5.0)
+		or skill.animation_name != &"skill_linebreaker"
+		or skill.attack_sequence.size() != 1
+	):
+		errors.append("linebreaker identity, cooldown, animation, or sequence is incorrect")
+	if (
+		attack == null
+		or attack.definition_id != &"attack.bladebound.linebreaker"
+		or Vector3i(
+			attack.startup_ticks,
+			attack.active_ticks,
+			attack.recovery_ticks
+		) != Vector3i(2, 8, 10)
+		or attack.hitbox_size != Vector2(120.0, 60.0)
+	):
+		errors.append("linebreaker nested AttackDefinition baseline is incorrect")
+	if (
+		movement == null
+		or not is_equal_approx(movement.distance_pixels, 176.0)
+		or movement.travel_start_tick != 1
+		or movement.travel_end_tick != 10
+		or movement.blocking_collision_mask != 1
+		or movement.pass_through_collision_mask != 4
+		or not movement.passes_target_tag(&"enemy.size.small")
+	):
+		errors.append("linebreaker movement or collision contract is incorrect")
+	if (
+		attack == null
+		or attack.cancel_targets_at_tick(9).has("action.attack")
+		or not attack.cancel_targets_at_tick(10).has("action.attack")
+		or not attack.cancel_targets_at_tick(20).has("action.attack")
+		or attack.cancel_targets_at_tick(21).has("action.attack")
+		or attack.cancel_targets_at_tick(11).has("action.dodge")
+		or not attack.cancel_targets_at_tick(12).has("action.dodge")
+	):
+		errors.append("linebreaker cancel rules do not preserve their exact boundaries")
+
+	var registry: DataRegistryService = DataRegistryScript.new()
+	errors.append_array(registry.reload_definitions("res://data"))
+	if registry.definition_count() != 15:
+		errors.append("DataRegistry did not index all fifteen project definitions")
+	if registry.get_definition(skill.definition_id) == null:
+		errors.append("DataRegistry is missing the linebreaker SkillDefinition")
+	registry.free()
+	return errors
+
+
+func _test_linebreaker_movement_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source := _load_linebreaker_skill()
+	if source == null or source.movement_profile == null:
+		errors.append("linebreaker movement profile did not load")
+		return errors
+	var movement := source.movement_profile
+	errors.append_array(movement.validation_errors(source.total_ticks()))
+	var right_total := Vector2.ZERO
+	var left_total := Vector2.ZERO
+	for action_tick: int in range(0, 22):
+		var right := movement.displacement_at_tick(action_tick, 1)
+		var left := movement.displacement_at_tick(action_tick, -1)
+		if not left.is_equal_approx(-right):
+			errors.append("linebreaker displacement did not mirror at tick %d" % action_tick)
+		right_total += right
+		left_total += left
+	if not right_total.is_equal_approx(Vector2(176.0, 0.0)):
+		errors.append("right-facing linebreaker did not travel exactly 176 px")
+	if not left_total.is_equal_approx(Vector2(-176.0, 0.0)):
+		errors.append("left-facing linebreaker did not travel exactly -176 px")
+	if movement.displacement_at_tick(1, 0) != Vector2.ZERO:
+		errors.append("linebreaker accepted an invalid zero facing sign")
+
+	var invalid := movement.duplicate(true) as SkillMovementProfile
+	invalid.travel_start_tick = 11
+	invalid.travel_end_tick = 10
+	invalid.distance_pixels = NAN
+	invalid.blocking_collision_mask = 4
+	invalid.pass_through_collision_mask = 4
+	invalid.pass_through_target_tags = []
+	if invalid.validation_errors(source.total_ticks()).size() < 4:
+		errors.append("movement profile did not reject its invalid boundaries")
+	return errors
+
+
+func _test_linebreaker_progression() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var project_skill := _load_linebreaker_skill()
+	if project_skill == null:
+		errors.append("linebreaker SkillDefinition did not load")
+		return errors
+	var source := project_skill.duplicate(true) as SkillDefinition
+	var model: LinebreakerSkillModel = LinebreakerSkillModelScript.new()
+	errors.append_array(model.configure(source))
+	source.movement_profile.distance_pixels = 999.0
+	if not is_equal_approx(model.movement_profile.distance_pixels, 176.0):
+		errors.append("source mutation changed the configured linebreaker snapshot")
+	if model.try_start(0):
+		errors.append("linebreaker accepted an invalid facing sign")
+	if not model.try_start(1):
+		errors.append("configured linebreaker could not start")
+	if model.try_start(1):
+		errors.append("active linebreaker restarted over its own timeline")
+	var total_displacement := Vector2.ZERO
+	var moving_ticks := 0
+	for _tick: int in range(20):
+		var displacement := model.advance_tick()
+		total_displacement += displacement
+		if not displacement.is_zero_approx():
+			moving_ticks += 1
+	if moving_ticks != 10 or not total_displacement.is_equal_approx(Vector2(176.0, 0.0)):
+		errors.append("linebreaker fixed-tick progression changed its 10-tick travel")
+	if model.is_active() or model.last_finish_reason != &"complete":
+		errors.append("linebreaker did not finish after exactly 20 action ticks")
+	if model.configure(null).is_empty() or not model.is_configured():
+		errors.append("invalid reconfiguration damaged the prior valid snapshot")
+	var weak_model: WeakRef = weakref(model)
+	model = null
+	if weak_model.get_ref() != null:
+		errors.append("released linebreaker model remained alive")
+	return errors
+
+
+func _test_linebreaker_cancel_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var source := _load_linebreaker_skill()
+	if source == null:
+		errors.append("linebreaker SkillDefinition did not load")
+		return errors
+
+	var early_buffer: InputBufferModel = InputBufferModelScript.new()
+	var early_model: LinebreakerSkillModel = LinebreakerSkillModelScript.new()
+	early_buffer.configure()
+	early_model.configure(source)
+	early_model.try_start(1)
+	for _tick: int in range(3):
+		early_buffer.advance_tick()
+		early_model.advance_tick(early_buffer)
+	early_buffer.record_pressed(&"attack")
+	while early_model.is_active() and early_model.timeline.action_tick < 10:
+		early_buffer.advance_tick()
+		early_model.advance_tick(early_buffer)
+	if (
+		early_model.last_finish_reason != &"canceled"
+		or early_model.last_cancel_target != &"action.attack"
+	):
+		errors.append("early attack input did not cancel linebreaker at tick 10")
+	elif (
+		early_buffer.last_event(&"attack").get("consumed_tick", -1)
+		- early_buffer.last_event(&"attack").get("pressed_tick", -1)
+		!= 7
+	):
+		errors.append("early linebreaker cancel was not consumed at buffer age 7")
+
+	var end_buffer: InputBufferModel = InputBufferModelScript.new()
+	var end_model: LinebreakerSkillModel = LinebreakerSkillModelScript.new()
+	end_buffer.configure()
+	end_model.configure(source)
+	end_model.try_start(1)
+	while end_model.timeline.action_tick < 19:
+		end_buffer.advance_tick()
+		end_model.advance_tick(end_buffer)
+	end_buffer.record_pressed(&"attack")
+	end_buffer.advance_tick()
+	end_model.advance_tick(end_buffer)
+	if end_model.last_cancel_target != &"action.attack":
+		errors.append("attack input on cancel end tick 20 was not accepted")
+
+	var after_buffer: InputBufferModel = InputBufferModelScript.new()
+	var after_model: LinebreakerSkillModel = LinebreakerSkillModelScript.new()
+	after_buffer.configure()
+	after_model.configure(source)
+	after_model.try_start(1)
+	for _tick: int in range(20):
+		after_buffer.advance_tick()
+		after_model.advance_tick(after_buffer)
+	after_buffer.record_pressed(&"attack")
+	if (
+		after_model.advance_tick(after_buffer) != Vector2.ZERO
+		or after_model.last_finish_reason != &"complete"
+	):
+		errors.append("post-window input changed a completed linebreaker")
+	return errors
+
+
+func _test_normal_to_skill_cancel_rules() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sequence := _load_project_normal_attack_sequence()
+	if sequence.size() != 3:
+		errors.append("normal attack sequence did not load")
+		return errors
+	var expected_ranges := [Vector2i(9, 18), Vector2i(10, 21), Vector2i(13, 27)]
+	for index: int in sequence.size():
+		var expected: Vector2i = expected_ranges[index]
+		var attack := sequence[index]
+		if (
+			attack.cancel_targets_at_tick(expected.x - 1).has("action.skill_1")
+			or not attack.cancel_targets_at_tick(expected.x).has("action.skill_1")
+			or not attack.cancel_targets_at_tick(expected.y).has("action.skill_1")
+			or attack.cancel_targets_at_tick(expected.y + 1).has("action.skill_1")
+		):
+			errors.append("A%d skill cancel boundaries are incorrect" % (index + 1))
+
+	var buffer: InputBufferModel = InputBufferModelScript.new()
+	var combo: NormalAttackComboModel = NormalAttackComboModelScript.new()
+	buffer.configure()
+	combo.configure(sequence)
+	buffer.record_pressed(&"attack")
+	combo.advance_tick(buffer)
+	while combo.timeline.action_tick < 8:
+		buffer.advance_tick()
+		combo.advance_tick(buffer)
+	if combo.can_cancel_to(&"action.skill_1") or combo.cancel_to(&"action.skill_1"):
+		errors.append("A1 canceled into skill before its declared window")
+	buffer.advance_tick()
+	combo.advance_tick(buffer)
+	if not combo.can_cancel_to(&"action.skill_1"):
+		errors.append("A1 did not expose its skill cancel on tick 9")
+	elif not combo.cancel_to(&"action.skill_1"):
+		errors.append("A1 rejected its declared skill cancel")
+	if combo.last_finish_reason != &"canceled" or combo.timeline.is_running:
+		errors.append("normal combo did not return to idle after skill cancellation")
+	return errors
+
+
 func _test_project_attack_visualization() -> PackedStringArray:
 	var errors := PackedStringArray()
 	var loaded := ResourceLoader.load("res://data/attacks/dev_a1.tres")
@@ -1084,8 +1747,8 @@ func _test_project_attack_visualization() -> PackedStringArray:
 	var registry: DataRegistryService = DataRegistryScript.new()
 	var registry_errors := registry.reload_definitions("res://data")
 	errors.append_array(registry_errors)
-	if registry.definition_count() != 8:
-		errors.append("DataRegistry did not index all eight project definitions")
+	if registry.definition_count() != 15:
+		errors.append("DataRegistry did not index all fifteen project definitions")
 	if registry.get_definition(&"attack.dev.a1_placeholder") != attack:
 		errors.append("DataRegistry did not return the project attack Resource")
 	registry.free()
@@ -1497,7 +2160,7 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 	Input.action_press(&"attack")
 	await physics_frame
 	Input.action_release(&"attack")
-	for _tick: int in range(12):
+	for _tick: int in range(16):
 		await physics_frame
 	if contact_label == null or not contact_label.text.contains("Contacts: 2 accepted"):
 		errors.append("A1 sandbox attack did not contact both distinct training targets once")
@@ -1507,7 +2170,7 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 		or not contact_label.text.contains("range 55-88")
 		or not contact_label.text.contains("crit 0")
 		or not contact_label.text.contains("Normal HP 212/300")
-		or not contact_label.text.contains("Poise 12.0/24.0 · airborne")
+		or not contact_label.text.contains("Poise 12.0/24.0 · hit_stun")
 		or not contact_label.text.contains("Elite HP 245/300")
 		or not contact_label.text.contains("Poise 0.0/12.0 · poise_break")
 	):
@@ -1518,10 +2181,10 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 	if (
 		dummy_a == null
 		or dummy_a_body == null
-		or dummy_a.min_hit_height <= 0.0
-		or dummy_a_body.position.y >= 0.0
+		or not is_equal_approx(dummy_a.min_hit_height, 0.0)
+		or not is_equal_approx(dummy_a_body.position.y, 0.0)
 	):
-		errors.append("CMB-006 sandbox did not separate airborne height from ground position")
+		errors.append("A1 incorrectly launched its normal target")
 	if hitbox != null and hitbox.contact_enabled:
 		errors.append("project hitbox remained enabled after the active phase")
 	for _finish_tick: int in range(10):
@@ -1561,6 +2224,716 @@ func _test_project_hitbox_sandbox() -> PackedStringArray:
 	):
 		errors.append("defeated targets received another accepted or applied hit")
 	sandbox.free()
+	return errors
+
+
+func _test_project_normal_combo_sandbox() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for CMB-008 integration")
+		return errors
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	var combo := sandbox.get("normal_attack_combo") as NormalAttackComboModel
+	var dummy_a := sandbox.get_node_or_null(
+		"Actors/Targets/DummyA/DummyAHurtbox"
+	) as HurtboxComponent
+	var dummy_a_body := sandbox.get_node_or_null(
+		"Actors/Targets/DummyA/Body"
+	) as Node2D
+	var contact_label := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/HitContactLabel"
+	) as Label
+	var attack_trail := sandbox.get_node_or_null(
+		"Actors/PlayerRoot/VisualRoot/AttackTrail"
+	) as Polygon2D
+	if combo == null or dummy_a == null or dummy_a_body == null:
+		errors.append("sandbox is missing combo model or normal target presentation")
+		sandbox.free()
+		return errors
+
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	await physics_frame
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	await physics_frame
+	var safety := 40
+	while combo.combo_index == 0 and safety > 0:
+		await physics_frame
+		safety -= 1
+	if combo.combo_index != 1:
+		errors.append("sandbox did not consume early input to enter A2")
+	else:
+		await physics_frame
+		Input.action_press(&"attack")
+		await physics_frame
+		Input.action_release(&"attack")
+		await physics_frame
+
+	safety = 48
+	while combo.combo_index != 2 and safety > 0:
+		await physics_frame
+		safety -= 1
+	if combo.combo_index != 2:
+		errors.append("sandbox did not consume buffered input to enter A3")
+	else:
+		safety = 24
+		while combo.timeline.action_tick < 12 and safety > 0:
+			await physics_frame
+			safety -= 1
+		if attack_trail == null or not attack_trail.visible:
+			errors.append("A3 active ticks did not show the attack trail")
+		if (
+			dummy_a.min_hit_height <= 0.0
+			or dummy_a_body.position.y >= 0.0
+		):
+			errors.append("A3 did not launch the normal target above ground")
+		if contact_label == null or not contact_label.text.contains("Contacts: 6 accepted"):
+			errors.append("full A1/A2/A3 chain did not hit both targets exactly once per attack")
+
+	Input.action_release(&"attack")
+	safety = 48
+	while combo.timeline.is_running and safety > 0:
+		await physics_frame
+		safety -= 1
+	if combo.timeline.is_running or combo.combo_index != -1:
+		errors.append("sandbox combo did not return to idle after A3 recovery")
+	sandbox.free()
+	return errors
+
+
+func _test_linebreaker_collision_sandbox() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for CMB-009 collision test")
+		return errors
+
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	await physics_frame
+	var player := sandbox.get_node_or_null(
+		"Actors/PlayerRoot"
+	) as PlayerGroundMovementController
+	var dummy_a := sandbox.get_node_or_null(
+		"Actors/Targets/DummyA"
+	) as CharacterBody2D
+	var dummy_b := sandbox.get_node_or_null(
+		"Actors/Targets/DummyB"
+	) as CharacterBody2D
+	var skill := sandbox.get("linebreaker_skill") as LinebreakerSkillModel
+	var attack_trail := sandbox.get_node_or_null(
+		"Actors/PlayerRoot/VisualRoot/AttackTrail"
+	) as Polygon2D
+	var contact_label := sandbox.get_node_or_null(
+		"Hud/AttackTimelinePanel/TimelineMargin/TimelineVBox/HitContactLabel"
+	) as Label
+	if player == null or dummy_a == null or dummy_b == null or skill == null:
+		errors.append("sandbox is missing CMB-009 player, EnemyBody, or skill model")
+		sandbox.free()
+		return errors
+	if (
+		dummy_a.collision_layer != 4
+		or dummy_b.collision_layer != 4
+		or (player.collision_mask & 4) != 0
+	):
+		errors.append("EnemyBody pass-through layers do not match the movement profile")
+
+	var start_x := player.global_position.x
+	Input.action_press(&"skill_1")
+	await physics_frame
+	Input.action_release(&"skill_1")
+	var saw_active_trail := false
+	var maximum_x := player.global_position.x
+	for _tick: int in range(30):
+		await physics_frame
+		maximum_x = maxf(maximum_x, player.global_position.x)
+		saw_active_trail = saw_active_trail or (
+			attack_trail != null and attack_trail.visible
+		)
+	if not is_equal_approx(player.global_position.x, start_x + 176.0):
+		errors.append(
+			"linebreaker ended at %.2f instead of %.2f"
+			% [player.global_position.x, start_x + 176.0]
+		)
+	if maximum_x <= dummy_b.global_position.x + 20.0:
+		errors.append("linebreaker did not pass through both EnemyBody targets")
+	if not saw_active_trail:
+		errors.append("linebreaker active ticks did not show its distinct trail")
+	if (
+		contact_label == null
+		or not contact_label.text.contains("Contacts: 2 accepted")
+		or not contact_label.text.contains("Damage: 2 resolved")
+	):
+		errors.append("linebreaker did not hit both crossed targets exactly once")
+	if skill.is_active() or player.is_action_motion_active() or player.collision_mask != 1:
+		errors.append("linebreaker did not restore player movement collision state")
+	sandbox.free()
+	await physics_frame
+
+	var wall_sandbox := sandbox_scene.instantiate()
+	root.add_child(wall_sandbox)
+	await physics_frame
+	var wall_player := wall_sandbox.get_node_or_null(
+		"Actors/PlayerRoot"
+	) as PlayerGroundMovementController
+	var wall_skill := wall_sandbox.get("linebreaker_skill") as LinebreakerSkillModel
+	if wall_player == null or wall_skill == null:
+		errors.append("wall sandbox is missing its player or linebreaker model")
+		wall_sandbox.free()
+		return errors
+	wall_player.global_position = Vector2(1160.0, 430.0)
+	await physics_frame
+	Input.action_press(&"skill_1")
+	await physics_frame
+	Input.action_release(&"skill_1")
+	var wall_maximum_x := wall_player.global_position.x
+	for _tick: int in range(30):
+		await physics_frame
+		wall_maximum_x = maxf(wall_maximum_x, wall_player.global_position.x)
+	if wall_maximum_x <= 1160.0:
+		errors.append("wall-bound linebreaker produced no forward motion")
+	if wall_maximum_x > 1188.5:
+		errors.append("linebreaker crossed the WorldStatic wall boundary")
+	if wall_skill.is_active() or wall_player.is_action_motion_active():
+		errors.append("wall collision left linebreaker motion active")
+	wall_sandbox.free()
+	return errors
+
+
+func _test_linebreaker_cancel_sandbox() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for CMB-009 cancel test")
+		return errors
+
+	var skill_to_attack := sandbox_scene.instantiate()
+	root.add_child(skill_to_attack)
+	await physics_frame
+	Input.action_release(&"attack")
+	Input.action_release(&"skill_1")
+	await physics_frame
+	var first_skill := skill_to_attack.get(
+		"linebreaker_skill"
+	) as LinebreakerSkillModel
+	var first_combo := skill_to_attack.get(
+		"normal_attack_combo"
+	) as NormalAttackComboModel
+	var first_buffer := skill_to_attack.get("input_buffer") as InputBufferModel
+	if first_buffer == null or not first_buffer.record_pressed(&"skill_1"):
+		errors.append("sandbox input buffer rejected the linebreaker start fixture")
+	await physics_frame
+	var safety := 12
+	while (
+		first_skill != null
+		and first_skill.is_active()
+		and first_skill.timeline.action_tick < 3
+		and safety > 0
+	):
+		await physics_frame
+		safety -= 1
+	if first_buffer == null or not first_buffer.record_pressed(&"attack"):
+		errors.append("sandbox input buffer rejected the attack cancel fixture")
+	safety = 20
+	while first_skill != null and first_skill.is_active() and safety > 0:
+		await physics_frame
+		safety -= 1
+	if (
+		first_skill == null
+		or first_skill.last_finish_reason != &"canceled"
+		or first_skill.last_cancel_target != &"action.attack"
+	):
+		errors.append(
+			"buffered attack did not cancel linebreaker: reason=%s target=%s active=%s tick=%d"
+			% [
+				String(first_skill.last_finish_reason) if first_skill != null else "null",
+				String(first_skill.last_cancel_target) if first_skill != null else "null",
+				str(first_skill.is_active()) if first_skill != null else "null",
+				first_skill.timeline.action_tick if first_skill != null else -1,
+			]
+		)
+	if (
+		first_combo == null
+		or first_combo.combo_index != 0
+		or not first_combo.timeline.is_running
+	):
+		errors.append(
+			"linebreaker attack cancel did not enter A1: index=%d running=%s tick=%d"
+			% [
+				first_combo.combo_index if first_combo != null else -99,
+				str(first_combo.timeline.is_running) if first_combo != null else "null",
+				first_combo.timeline.action_tick if first_combo != null else -1,
+			]
+		)
+	skill_to_attack.free()
+	await physics_frame
+
+	var normal_to_skill := sandbox_scene.instantiate()
+	root.add_child(normal_to_skill)
+	await physics_frame
+	Input.action_release(&"attack")
+	Input.action_release(&"skill_1")
+	await physics_frame
+	var second_skill := normal_to_skill.get(
+		"linebreaker_skill"
+	) as LinebreakerSkillModel
+	var second_combo := normal_to_skill.get(
+		"normal_attack_combo"
+	) as NormalAttackComboModel
+	var second_buffer := normal_to_skill.get("input_buffer") as InputBufferModel
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	safety = 20
+	while (
+		second_combo != null
+		and second_combo.timeline.action_tick < 8
+		and safety > 0
+	):
+		await physics_frame
+		safety -= 1
+	if not bool(normal_to_skill.get("_current_normal_attack_hit")):
+		errors.append("A1 did not register the hit confirmation used by skill cancel")
+	if second_buffer == null or not second_buffer.record_pressed(&"skill_1"):
+		errors.append("sandbox input buffer rejected the skill cancel fixture")
+	await physics_frame
+	if second_skill == null or not second_skill.is_active():
+		errors.append(
+			"hit-confirmed A1 did not cancel into linebreaker: combo_index=%d combo_tick=%d hit=%s"
+			% [
+				second_combo.combo_index if second_combo != null else -99,
+				second_combo.timeline.action_tick if second_combo != null else -1,
+				str(normal_to_skill.get("_current_normal_attack_hit")),
+			]
+		)
+	if second_combo == null or second_combo.last_finish_reason != &"canceled":
+		errors.append("normal combo did not report its skill cancellation")
+	normal_to_skill.free()
+	return errors
+
+
+func _load_hit_feedback_profiles() -> Array[HitFeedbackProfile]:
+	var profiles: Array[HitFeedbackProfile] = []
+	for path: String in [
+		"res://data/combat/feedback_profiles/light.tres",
+		"res://data/combat/feedback_profiles/medium.tres",
+		"res://data/combat/feedback_profiles/heavy.tres",
+		"res://data/combat/feedback_profiles/finisher.tres",
+	]:
+		var source := ResourceLoader.load(path) as HitFeedbackProfile
+		if source == null:
+			continue
+		var snapshot := source.duplicate(true) as HitFeedbackProfile
+		if snapshot != null:
+			profiles.append(snapshot)
+	return profiles
+
+
+func _make_feedback_request(
+	strength: StringName = &"light",
+	hit_stop_ticks: int = 3,
+	hit_id: StringName = &"hit.feedback.test",
+	critical := false
+) -> HitFeedbackRequest:
+	return HitFeedbackRequestScript.new(
+		1001,
+		2001,
+		&"attack.test.a1",
+		hit_id,
+		Vector2(320.0, 240.0),
+		Vector2.RIGHT,
+		88,
+		critical,
+		hit_stop_ticks,
+		strength
+	)
+
+
+func _test_hit_feedback_profiles() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var profiles := _load_hit_feedback_profiles()
+	if profiles.size() != 4:
+		errors.append("project did not load all four feedback profiles")
+		return errors
+	var expected := {
+		&"light": Vector3i(2, 3, 1),
+		&"medium": Vector3i(4, 5, 2),
+		&"heavy": Vector3i(6, 8, 3),
+		&"finisher": Vector3i(8, 10, 3),
+	}
+	for profile: HitFeedbackProfile in profiles:
+		errors.append_array(profile.validation_errors())
+		var key := profile.strength_key()
+		if not expected.has(key):
+			errors.append("unexpected feedback strength: %s" % String(key))
+			continue
+		var contract: Vector3i = expected[key]
+		if (
+			profile.minimum_hit_stop_ticks != contract.x
+			or profile.maximum_hit_stop_ticks != contract.y
+			or profile.sfx_layer_count != contract.z
+		):
+			errors.append("%s feedback budget changed" % String(key))
+		if profile.camera_zoom_pulse > 0.03:
+			errors.append("%s camera zoom exceeds the three-percent budget" % String(key))
+
+	var attack := _make_test_attack()
+	attack.hit_stop_ticks = 4
+	if attack.validation_errors().is_empty():
+		errors.append("light attack accepted hit stop above its three-tick budget")
+	attack.feedback_strength = "medium"
+	if not attack.validation_errors().is_empty():
+		errors.append("medium attack rejected its four-tick lower boundary")
+	attack.feedback_strength = "heavy"
+	attack.hit_stop_ticks = 9
+	if attack.validation_errors().is_empty():
+		errors.append("heavy attack accepted hit stop above eight ticks")
+	attack.feedback_strength = "finisher"
+	attack.hit_stop_ticks = 10
+	if not attack.validation_errors().is_empty():
+		errors.append("finisher attack rejected its ten-tick upper boundary")
+
+	var registry: DataRegistryService = DataRegistryScript.new()
+	errors.append_array(registry.reload_definitions("res://data"))
+	for profile: HitFeedbackProfile in profiles:
+		if registry.get_definition(profile.definition_id) == null:
+			errors.append("DataRegistry is missing %s" % String(profile.definition_id))
+	registry.free()
+	return errors
+
+
+func _test_hit_feedback_request_snapshot() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var contact := _make_hit_contact(2001, 7, &"hit.feedback.snapshot")
+	var result := DamageResolverModelScript.new().resolve(_make_damage_packet(), 25.0)
+	var request: HitFeedbackRequest = HitFeedbackRequestScript.from_outcome(
+		contact,
+		result,
+		Vector2(480.0, 260.0),
+		Vector2.LEFT
+	)
+	if request == null:
+		errors.append("accepted HitResult did not create feedback request")
+		return errors
+	contact = null
+	result = null
+	if (
+		request.source_instance_id != 1001
+		or request.target_instance_id != 2001
+		or request.attack_id != &"attack.test.a1"
+		or request.hit_id != &"hit.feedback.snapshot"
+		or request.world_position != Vector2(480.0, 260.0)
+		or request.direction != Vector2.LEFT
+		or request.final_damage != 88
+		or request.hit_stop_ticks != 3
+		or request.feedback_strength != &"light"
+	):
+		errors.append("feedback request did not preserve its immutable hit snapshot")
+	errors.append_array(request.validation_errors())
+	if HitFeedbackRequestScript.from_outcome(
+		_make_hit_contact(2001),
+		HitResultScript.rejected(&"test_rejection"),
+		Vector2.ZERO,
+		Vector2.RIGHT
+	) != null:
+		errors.append("rejected HitResult created a feedback request")
+	var invalid: HitFeedbackRequest = HitFeedbackRequestScript.new(
+		0,
+		0,
+		&"",
+		&"",
+		Vector2(NAN, INF),
+		Vector2(2.0, 0.0),
+		0,
+		false,
+		-1,
+		&"unsupported"
+	)
+	if invalid.validation_errors().size() < 8:
+		errors.append("feedback request did not reject its invalid boundaries")
+	return errors
+
+
+func _test_hit_feedback_channel_routing() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var profiles := _load_hit_feedback_profiles()
+	var service: HitFeedbackService = HitFeedbackServiceScript.new()
+	service.auto_pause_tree = false
+	errors.append_array(service.configure(profiles))
+	var channels := {
+		"hit_stop": 0,
+		"camera": 0,
+		"vfx": 0,
+		"sfx": 0,
+		"accepted": 0,
+	}
+	service.hit_stop_requested.connect(
+		func(_requested_ticks: int, _active_ticks: int) -> void:
+			channels["hit_stop"] = int(channels["hit_stop"]) + 1
+	)
+	service.camera_feedback_requested.connect(
+		func(
+			_world_position: Vector2,
+			_shake_pixels: float,
+			_duration_ticks: int,
+			_zoom_pulse: float
+		) -> void:
+			channels["camera"] = int(channels["camera"]) + 1
+	)
+	service.vfx_feedback_requested.connect(
+		func(
+			_world_position: Vector2,
+			_direction: Vector2,
+			_style: StringName,
+			_scale: float,
+			_lifetime_ticks: int,
+			_critical: bool
+		) -> void:
+			channels["vfx"] = int(channels["vfx"]) + 1
+	)
+	service.sfx_feedback_requested.connect(
+		func(
+			_world_position: Vector2,
+			_cue: StringName,
+			_layer_count: int,
+			_critical: bool
+		) -> void:
+			channels["sfx"] = int(channels["sfx"]) + 1
+	)
+	service.feedback_accepted.connect(
+		func(_request: HitFeedbackRequest, _profile: HitFeedbackProfile) -> void:
+			channels["accepted"] = int(channels["accepted"]) + 1
+	)
+	errors.append_array(
+		service.request_feedback(
+			_make_feedback_request(&"medium", 4, &"hit.feedback.routing")
+		)
+	)
+	for channel_name: String in channels:
+		if int(channels[channel_name]) != 1:
+			errors.append("%s feedback channel did not emit exactly once" % channel_name)
+	if service.request_count != 1:
+		errors.append("valid feedback request count was not recorded")
+
+	var invalid_profiles: Array[HitFeedbackProfile] = [
+		profiles[0],
+		profiles[0],
+		profiles[2],
+		profiles[3],
+	]
+	if service.configure(invalid_profiles).is_empty():
+		errors.append("duplicate and incomplete feedback configuration was accepted")
+	if not service.has_profile(&"medium") or not service.is_configured():
+		errors.append("invalid reconfiguration replaced the valid profile table")
+	if service.request_feedback(null).is_empty() or service.request_count != 1:
+		errors.append("null feedback request was accepted or changed runtime state")
+	service.free()
+	return errors
+
+
+func _test_hit_feedback_hit_stop_boundaries() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var service: HitFeedbackService = HitFeedbackServiceScript.new()
+	service.auto_pause_tree = false
+	errors.append_array(service.configure(_load_hit_feedback_profiles()))
+	var finish_count := [0]
+	service.hit_stop_finished.connect(
+		func() -> void: finish_count[0] = int(finish_count[0]) + 1
+	)
+	service.request_feedback(_make_feedback_request(&"light", 3, &"hit.stop.light"))
+	if service.hit_stop_ticks_remaining != 3:
+		errors.append("light hit stop did not start at three ticks")
+	if not service.advance_feedback_tick() or service.hit_stop_ticks_remaining != 2:
+		errors.append("first light hit-stop tick did not advance to two")
+	service.request_feedback(_make_feedback_request(&"medium", 4, &"hit.stop.medium"))
+	service.request_feedback(_make_feedback_request(&"light", 3, &"hit.stop.overlap"))
+	if service.hit_stop_ticks_remaining != 4:
+		errors.append("overlapping hit stops were summed or failed to take the maximum")
+	for expected_remaining: int in [3, 2, 1, 0]:
+		if not service.advance_feedback_tick():
+			errors.append("active hit stop ended before its exact boundary")
+			break
+		if service.hit_stop_ticks_remaining != expected_remaining:
+			errors.append("hit stop remaining tick boundary was incorrect")
+			break
+	if service.advance_feedback_tick():
+		errors.append("hit stop remained active after reaching zero")
+	if int(finish_count[0]) != 1:
+		errors.append("hit stop completion did not emit exactly once")
+	service.free()
+	return errors
+
+
+func _test_hit_feedback_camera_merging() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var service: HitFeedbackService = HitFeedbackServiceScript.new()
+	service.auto_pause_tree = false
+	errors.append_array(service.configure(_load_hit_feedback_profiles()))
+	service.request_feedback(_make_feedback_request(&"light", 3, &"camera.light"))
+	if (
+		not is_equal_approx(service.camera_shake_pixels, 0.6)
+		or service.camera_ticks_remaining != 2
+	):
+		errors.append("light camera feedback did not use its profile")
+	service.request_feedback(_make_feedback_request(&"medium", 4, &"camera.medium"))
+	if (
+		not is_equal_approx(service.camera_shake_pixels, 2.2)
+		or service.camera_ticks_remaining != 6
+	):
+		errors.append("medium camera feedback did not take max strength plus one extension")
+	service.request_feedback(_make_feedback_request(&"light", 3, &"camera.weaker"))
+	if (
+		not is_equal_approx(service.camera_shake_pixels, 2.2)
+		or service.camera_ticks_remaining != 7
+	):
+		errors.append("weaker overlap summed strength or failed bounded extension")
+	service.request_feedback(_make_feedback_request(&"heavy", 8, &"camera.heavy"))
+	if (
+		not is_equal_approx(service.camera_shake_pixels, 4.0)
+		or service.camera_ticks_remaining != 10
+	):
+		errors.append("heavy overlap did not replace amplitude without summing")
+	for index: int in range(20):
+		service.request_feedback(
+			_make_feedback_request(
+				&"finisher",
+				10,
+				StringName("camera.finisher.%d" % index)
+			)
+		)
+	if (
+		service.camera_ticks_remaining != HitFeedbackService.MAX_CAMERA_FEEDBACK_TICKS
+		or not is_equal_approx(service.camera_shake_pixels, 5.0)
+		or not is_equal_approx(service.camera_zoom_pulse, 0.03)
+	):
+		errors.append("camera overlap exceeded its duration, amplitude, or zoom cap")
+	for _tick: int in range(HitFeedbackService.MAX_CAMERA_FEEDBACK_TICKS):
+		service.advance_feedback_tick()
+	if (
+		service.camera_ticks_remaining != 0
+		or not is_zero_approx(service.camera_shake_pixels)
+		or not is_zero_approx(service.camera_zoom_pulse)
+	):
+		errors.append("camera feedback did not return to a neutral state")
+	service.free()
+	return errors
+
+
+func _test_hit_feedback_determinism_and_lifecycle() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var profiles := _load_hit_feedback_profiles()
+	var first: HitFeedbackService = HitFeedbackServiceScript.new()
+	var second: HitFeedbackService = HitFeedbackServiceScript.new()
+	first.auto_pause_tree = false
+	second.auto_pause_tree = false
+	errors.append_array(first.configure(profiles))
+	errors.append_array(second.configure(profiles))
+	var first_samples: Array[Vector3] = []
+	var second_samples: Array[Vector3] = []
+	first.camera_state_changed.connect(
+		func(offset: Vector2, zoom_scale: float) -> void:
+			first_samples.append(Vector3(offset.x, offset.y, zoom_scale))
+	)
+	second.camera_state_changed.connect(
+		func(offset: Vector2, zoom_scale: float) -> void:
+			second_samples.append(Vector3(offset.x, offset.y, zoom_scale))
+	)
+	var request := _make_feedback_request(&"heavy", 8, &"feedback.deterministic")
+	first.request_feedback(request)
+	second.request_feedback(request)
+	for _tick: int in range(12):
+		first.advance_feedback_tick()
+		second.advance_feedback_tick()
+	if first_samples != second_samples:
+		errors.append("identical fixed-tick feedback inputs produced different camera samples")
+	profiles[0].camera_shake_pixels = 20.0
+	if (
+		not is_equal_approx(first.profile_for(&"light").camera_shake_pixels, 0.6)
+		or not is_equal_approx(second.profile_for(&"light").camera_shake_pixels, 0.6)
+	):
+		errors.append("configured services retained mutable source profiles")
+	var weak_first: WeakRef = weakref(first)
+	var weak_second: WeakRef = weakref(second)
+	first.free()
+	second.free()
+	first = null
+	second = null
+	if weak_first.get_ref() != null or weak_second.get_ref() != null:
+		errors.append("released feedback services remained alive")
+	return errors
+
+
+func _test_hit_feedback_sandbox() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var sandbox_scene := ResourceLoader.load(
+		"res://scenes/tests/movement_sandbox.tscn"
+	) as PackedScene
+	if sandbox_scene == null:
+		errors.append("movement sandbox could not load for CMB-010 integration")
+		return errors
+	var sandbox := sandbox_scene.instantiate()
+	root.add_child(sandbox)
+	await physics_frame
+	var service := sandbox.get_node_or_null("HitFeedbackService") as HitFeedbackService
+	var presenter := sandbox.get_node_or_null(
+		"HitFeedbackPresenter"
+	) as HitFeedbackPresenter
+	var camera := sandbox.get_node_or_null("CombatCamera") as Camera2D
+	if service == null or presenter == null or camera == null:
+		errors.append("sandbox is missing feedback service, presenter, or camera")
+		sandbox.free()
+		paused = false
+		return errors
+	Input.action_release(&"attack")
+	await physics_frame
+	Input.action_press(&"attack")
+	await physics_frame
+	Input.action_release(&"attack")
+	var safety := 60
+	var saw_hit_stop_pause := paused
+	while service.request_count < 2 and safety > 0:
+		await physics_frame
+		saw_hit_stop_pause = saw_hit_stop_pause or paused
+		safety -= 1
+	if service.request_count != 2:
+		errors.append("A1 multi-target hit did not emit two feedback requests")
+	while service.hit_stop_ticks_remaining > 0 and safety > 0:
+		await physics_frame
+		saw_hit_stop_pause = saw_hit_stop_pause or paused
+		safety -= 1
+	await physics_frame
+	if not saw_hit_stop_pause:
+		errors.append("sandbox hit stop never paused the scene tree")
+	if paused:
+		errors.append("sandbox hit stop did not restore the running scene")
+	if presenter.vfx_request_count != 2 or presenter.sfx_request_count != 2:
+		errors.append("presenter did not receive independent VFX and SFX requests")
+	while service.camera_ticks_remaining > 0 and safety > 0:
+		await physics_frame
+		safety -= 1
+	if camera.offset != Vector2.ZERO or camera.zoom != Vector2.ONE:
+		errors.append("combat camera did not return to its neutral transform")
+
+	service.request_feedback(
+		_make_feedback_request(&"light", 3, &"feedback.release.active")
+	)
+	if not paused:
+		errors.append("direct active hit stop did not acquire the tree pause")
+	sandbox.free()
+	if paused:
+		errors.append("freeing the room left its hit-stop pause active")
+		paused = false
 	return errors
 
 
@@ -1967,8 +3340,8 @@ func _test_combat_reaction_profiles() -> PackedStringArray:
 
 	var registry: DataRegistryService = DataRegistryScript.new()
 	errors.append_array(registry.reload_definitions("res://data"))
-	if registry.definition_count() != 8:
-		errors.append("DataRegistry did not index all eight project definitions")
+	if registry.definition_count() != 15:
+		errors.append("DataRegistry did not index all fifteen project definitions")
 	for definition_id: StringName in expected.values():
 		if not registry.has_definition(definition_id):
 			errors.append("DataRegistry is missing %s" % String(definition_id))
@@ -2807,13 +4180,36 @@ func _test_export_remap_path() -> PackedStringArray:
 
 func _test_release_debug_guard() -> PackedStringArray:
 	var errors := PackedStringArray()
-	var source_file := FileAccess.open("res://scenes/boot/boot.gd", FileAccess.READ)
-	if source_file == null:
+	var boot_source_file := FileAccess.open(
+		"res://scenes/boot/boot.gd",
+		FileAccess.READ
+	)
+	if boot_source_file == null:
 		errors.append("boot.gd could not be read")
 		return errors
-	var source := source_file.get_as_text()
-	if not source.contains("OS.is_debug_build()"):
+	var boot_source := boot_source_file.get_as_text()
+	if not boot_source.contains("debug_panel.visible = OS.is_debug_build()"):
 		errors.append("boot debug panel is not guarded by OS.is_debug_build()")
+
+	var sandbox_source_file := FileAccess.open(
+		"res://scripts/actors/movement_sandbox.gd",
+		FileAccess.READ
+	)
+	if sandbox_source_file == null:
+		errors.append("movement_sandbox.gd could not be read")
+		return errors
+	var sandbox_source := sandbox_source_file.get_as_text()
+	var required_guards := PackedStringArray([
+		"debug_panel.visible = OS.is_debug_build()",
+		"attack_timeline_panel.visible = OS.is_debug_build()",
+		"feedback_status_label.visible = OS.is_debug_build()",
+	])
+	for required_guard: String in required_guards:
+		if not sandbox_source.contains(required_guard):
+			errors.append(
+				"movement sandbox debug UI is missing Release guard: %s"
+				% required_guard
+			)
 	return errors
 
 

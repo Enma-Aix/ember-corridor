@@ -21,6 +21,11 @@ var _dodge_model: DodgeModel = DodgeModelScript.new()
 var _base_visual_scale_x := 1.0
 var _displayed_facing := GroundMovementModel.FACING_RIGHT
 var _displayed_dodge_invulnerability := false
+var _facing_locked := false
+var _action_motion_active := false
+var _action_motion_pending := false
+var _queued_action_displacement := Vector2.ZERO
+var _collision_mask_before_action := 0
 
 
 func _ready() -> void:
@@ -45,18 +50,29 @@ func _physics_process(delta: float) -> void:
 		&"move_up",
 		&"move_down"
 	)
-	if Input.is_action_just_pressed(&"dodge"):
+	if not _action_motion_active and Input.is_action_just_pressed(&"dodge"):
 		try_start_dodge(input_vector)
 
 	var was_dodging := _dodge_model.is_active()
-	if was_dodging:
+	if _action_motion_pending:
+		_action_motion_pending = false
+		velocity = _queued_action_displacement / maxf(delta, 0.000001)
+		_queued_action_displacement = Vector2.ZERO
+		if not was_dodging:
+			_dodge_model.advance_tick()
+	elif _action_motion_active:
+		velocity = Vector2.ZERO
+		if not was_dodging:
+			_dodge_model.advance_tick()
+	elif was_dodging:
 		var displacement := _dodge_model.advance_tick()
 		velocity = displacement / maxf(delta, 0.000001)
 		_sync_dodge_state(was_dodging)
 	else:
 		_dodge_model.advance_tick()
 		velocity = _movement_model.velocity_for_input(input_vector)
-		_movement_model.update_facing(input_vector.x)
+		if not _facing_locked:
+			_movement_model.update_facing(input_vector.x)
 	_apply_facing()
 	move_and_slide()
 
@@ -70,6 +86,8 @@ func movement_velocity_for_input(input_vector: Vector2) -> Vector2:
 
 
 func try_start_dodge(input_vector: Vector2) -> bool:
+	if _action_motion_active:
+		return false
 	if not _dodge_model.try_start(input_vector, _movement_model.facing_sign):
 		return false
 	_movement_model.update_facing(_dodge_model.direction.x)
@@ -96,6 +114,42 @@ func dodge_cooldown_ticks() -> int:
 
 func dodge_direction() -> Vector2:
 	return _dodge_model.direction
+
+
+func set_facing_locked(locked: bool) -> void:
+	_facing_locked = locked
+
+
+func begin_action_motion(blocking_collision_mask: int) -> bool:
+	if _action_motion_active or blocking_collision_mask <= 0 or is_dodging():
+		return false
+	_collision_mask_before_action = collision_mask
+	collision_mask = blocking_collision_mask
+	_action_motion_active = true
+	return true
+
+
+func queue_action_displacement(displacement: Vector2) -> bool:
+	if (
+		not is_finite(displacement.x)
+		or not is_finite(displacement.y)
+	):
+		return false
+	_queued_action_displacement = displacement
+	_action_motion_pending = true
+	return true
+
+
+func end_action_motion() -> void:
+	if not _action_motion_active:
+		return
+	collision_mask = _collision_mask_before_action
+	_collision_mask_before_action = 0
+	_action_motion_active = false
+
+
+func is_action_motion_active() -> bool:
+	return _action_motion_active
 
 
 func _apply_facing() -> void:

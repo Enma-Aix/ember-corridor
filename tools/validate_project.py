@@ -82,7 +82,16 @@ REQUIRED_FILES = (
     "scripts/combat/state_machine_model.gd",
     "scripts/data/attack_definition.gd",
     "scripts/data/attack_cancel_window.gd",
+    "scripts/data/skill_movement_profile.gd",
+    "scripts/data/skill_definition.gd",
+    "scripts/data/hit_feedback_profile.gd",
     "scripts/combat/attack_timeline_model.gd",
+    "scripts/combat/input_buffer_model.gd",
+    "scripts/combat/normal_attack_combo_model.gd",
+    "scripts/combat/linebreaker_skill_model.gd",
+    "scripts/combat/hit_feedback_request.gd",
+    "scripts/combat/hit_feedback_service.gd",
+    "scripts/presentation/hit_feedback_presenter.gd",
     "scripts/combat/hit_contact.gd",
     "scripts/combat/hit_resolver_model.gd",
     "scripts/combat/hitbox_component.gd",
@@ -95,7 +104,14 @@ REQUIRED_FILES = (
     "scripts/combat/combatant_model.gd",
     "scripts/combat/juggle_model.gd",
     "data/attacks/dev_a1.tres",
+    "data/attacks/dev_a2.tres",
+    "data/attacks/dev_a3.tres",
     "data/attacks/dev_launcher.tres",
+    "data/skills/bladebound_linebreaker.tres",
+    "data/combat/feedback_profiles/light.tres",
+    "data/combat/feedback_profiles/medium.tres",
+    "data/combat/feedback_profiles/heavy.tres",
+    "data/combat/feedback_profiles/finisher.tres",
     "data/combat/reaction_profiles/normal.tres",
     "data/combat/reaction_profiles/elite.tres",
     "data/combat/reaction_profiles/boss.tres",
@@ -112,6 +128,10 @@ REQUIRED_FILES = (
     "docs/M1-CMB-004-TEST-PLAN.md",
     "docs/M1-CMB-005-TEST-PLAN.md",
     "docs/M1-CMB-006-TEST-PLAN.md",
+    "docs/M1-CMB-007-TEST-PLAN.md",
+    "docs/M1-CMB-008-TEST-PLAN.md",
+    "docs/M1-CMB-009-TEST-PLAN.md",
+    "docs/M1-CMB-010-TEST-PLAN.md",
     "docs/ASSET-LICENSE-REGISTER.csv",
     "licenses/GODOT-ENGINE-LICENSE.md",
     "build/.gdignore",
@@ -141,6 +161,10 @@ def main() -> int:
     validate_dodge_contract(errors)
     validate_state_machine_contract(errors)
     validate_attack_timeline_contract(errors)
+    validate_input_buffer_contract(errors)
+    validate_normal_combo_contract(errors)
+    validate_linebreaker_contract(errors)
+    validate_hit_feedback_contract(errors)
     validate_hit_detection_contract(errors)
     validate_damage_formula_contract(errors)
     validate_combatant_contract(errors)
@@ -185,7 +209,7 @@ def validate_project_settings(errors: list[str]) -> None:
         'config/features=PackedStringArray("4.7", "GL Compatibility")',
         'renderer/rendering_method="gl_compatibility"',
         "common/physics_ticks_per_second=60",
-        'run/main_scene="res://scenes/tests/movement_sandbox.tscn"',
+        'run/main_scene="res://scenes/game/vertical_slice.tscn"',
     )
     for marker in required_markers:
         if marker not in text:
@@ -499,6 +523,434 @@ def validate_attack_timeline_contract(errors: list[str]) -> None:
             not in sandbox_text
         ):
             errors.append("CMB-002 sandbox does not emit its readiness marker")
+
+
+def validate_input_buffer_contract(errors: list[str]) -> None:
+    model_path = ROOT / "scripts/combat/input_buffer_model.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    test_path = ROOT / "tests/test_runner.gd"
+    if not model_path.is_file():
+        return
+    model_text = model_path.read_text(encoding="utf-8")
+    for marker in (
+        "class_name InputBufferModel",
+        "extends RefCounted",
+        "const DEFAULT_BUFFER_TICKS := 8",
+        "var current_tick",
+        "var buffer_ticks",
+        "func configure",
+        "func advance_tick",
+        "func record_pressed",
+        "func record_released",
+        '"pressed_tick"',
+        '"released_tick"',
+        '"consumed_tick"',
+        "func has_buffered_press",
+        "func consume",
+        "func clear",
+        "input_age_ticks(action) >= _buffer_ticks",
+    ):
+        if marker not in model_text:
+            errors.append(f"CMB-007 InputBufferModel missing marker: {marker}")
+    forbidden = re.search(
+        r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+        r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
+        model_text,
+    )
+    if forbidden:
+        errors.append(
+            "CMB-007 input buffer depends on scene or presentation code: "
+            f"{forbidden.group(0)}"
+        )
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'Input.is_action_just_pressed(&"attack")',
+            'Input.is_action_just_released(&"attack")',
+            "input_buffer.advance_tick()",
+            "input_buffer.record_pressed",
+            "input_buffer.record_released",
+            "NOTIFICATION_APPLICATION_FOCUS_OUT",
+            'GameLog.info(&"InputBufferSandbox", "CMB-007 input buffer ready")',
+        ):
+            if marker not in sandbox_text:
+                errors.append(f"CMB-007 sandbox missing marker: {marker}")
+    if test_path.is_file():
+        test_text = test_path.read_text(encoding="utf-8")
+        for marker in (
+            "_test_input_buffer_expiration_boundary()",
+            "_test_input_buffer_release_and_consumption()",
+            "_test_input_buffer_isolation_pause_and_clear()",
+        ):
+            if marker not in test_text:
+                errors.append(f"CMB-007 tests missing marker: {marker}")
+
+
+def validate_normal_combo_contract(errors: list[str]) -> None:
+    combo_path = ROOT / "scripts/combat/normal_attack_combo_model.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    player_scene_path = ROOT / "scenes/actors/player.tscn"
+    test_path = ROOT / "tests/test_runner.gd"
+    resource_contracts = {
+        ROOT / "data/attacks/dev_a1.tres": (
+            "startup_ticks = 6",
+            "active_ticks = 3",
+            "recovery_ticks = 11",
+            "start_tick = 9",
+            '&"action.attack"',
+        ),
+        ROOT / "data/attacks/dev_a2.tres": (
+            'definition_id = &"attack.bladebound.a2_return_slash"',
+            "startup_ticks = 7",
+            "active_ticks = 3",
+            "recovery_ticks = 13",
+            "start_tick = 10",
+            "hitbox_size = Vector2(96, 60)",
+        ),
+        ROOT / "data/attacks/dev_a3.tres": (
+            'definition_id = &"attack.bladebound.a3_rising_slash"',
+            "startup_ticks = 9",
+            "active_ticks = 4",
+            "recovery_ticks = 18",
+            "hit_stop_ticks = 5",
+            'launch_profile = &"combat.launch.dev_launcher"',
+        ),
+    }
+    if combo_path.is_file():
+        combo_text = combo_path.read_text(encoding="utf-8")
+        for marker in (
+            "class_name NormalAttackComboModel",
+            "extends RefCounted",
+            "signal attack_started",
+            "signal attack_finished",
+            'const ATTACK_INPUT_ACTION := &"attack"',
+            'const ATTACK_CANCEL_TAG := &"action.attack"',
+            "func configure",
+            "duplicate(true)",
+            "func advance_tick",
+            "available_cancel_targets()",
+            "input_buffer.consume(ATTACK_INPUT_ACTION)",
+            "func reset",
+        ):
+            if marker not in combo_text:
+                errors.append(f"CMB-008 combo model missing marker: {marker}")
+        forbidden = re.search(
+            r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+            r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
+            combo_text,
+        )
+        if forbidden:
+            errors.append(
+                "CMB-008 combo core depends on scene or presentation code: "
+                f"{forbidden.group(0)}"
+            )
+    for path, markers in resource_contracts.items():
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                errors.append(f"CMB-008 Resource {path.name} missing marker: {marker}")
+    if sandbox_path.is_file():
+        sandbox_text = sandbox_path.read_text(encoding="utf-8")
+        for marker in (
+            'preload("res://data/attacks/dev_a1.tres")',
+            'preload("res://data/attacks/dev_a2.tres")',
+            'preload("res://data/attacks/dev_a3.tres")',
+            "normal_attack_combo.advance_tick(input_buffer",
+            "player.set_facing_locked(true)",
+            'GameLog.info(&"NormalComboSandbox", "CMB-008 three-hit combo ready")',
+        ):
+            if marker not in sandbox_text:
+                errors.append(f"CMB-008 sandbox missing marker: {marker}")
+    if player_scene_path.is_file():
+        player_scene = player_scene_path.read_text(encoding="utf-8")
+        if '[node name="AttackTrail" type="Polygon2D" parent="VisualRoot"]' not in player_scene:
+            errors.append("CMB-008 player presentation is missing AttackTrail")
+    if test_path.is_file():
+        test_text = test_path.read_text(encoding="utf-8")
+        for marker in (
+            "_test_normal_combo_resource_contract()",
+            "_test_normal_combo_buffered_chain()",
+            "_test_normal_combo_cancel_boundaries()",
+            "_test_normal_combo_recovery_and_validation()",
+            "_test_normal_combo_hitbox_mirroring()",
+            "_test_project_normal_combo_sandbox()",
+        ):
+            if marker not in test_text:
+                errors.append(f"CMB-008 tests missing marker: {marker}")
+
+
+def validate_linebreaker_contract(errors: list[str]) -> None:
+    movement_path = ROOT / "scripts/data/skill_movement_profile.gd"
+    definition_path = ROOT / "scripts/data/skill_definition.gd"
+    model_path = ROOT / "scripts/combat/linebreaker_skill_model.gd"
+    controller_path = ROOT / "scripts/actors/ground_movement_controller.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    sandbox_scene_path = ROOT / "scenes/tests/movement_sandbox.tscn"
+    resource_path = ROOT / "data/skills/bladebound_linebreaker.tres"
+    test_path = ROOT / "tests/test_runner.gd"
+
+    contracts = {
+        movement_path: (
+            "class_name SkillMovementProfile",
+            "travel_start_tick",
+            "travel_end_tick",
+            "distance_pixels",
+            "blocking_collision_mask",
+            "pass_through_collision_mask",
+            "pass_through_target_tags",
+            "func displacement_at_tick",
+        ),
+        definition_path: (
+            "class_name SkillDefinition",
+            "extends BaseDefinition",
+            "cooldown_seconds",
+            "attack_sequence",
+            "movement_profile",
+            "cancel_rules",
+            "ai_value_tags",
+            "upgrade_nodes",
+            'return &"skill"',
+        ),
+        model_path: (
+            "class_name LinebreakerSkillModel",
+            "extends RefCounted",
+            "signal skill_started",
+            "signal skill_finished",
+            "func configure",
+            "duplicate(true)",
+            "func try_start",
+            "func advance_tick",
+            "movement_profile.displacement_at_tick",
+            "_timeline.available_cancel_targets()",
+            "input_buffer.consume(input_action)",
+        ),
+        controller_path: (
+            "func begin_action_motion",
+            "func queue_action_displacement",
+            "func end_action_motion",
+            "collision_mask = blocking_collision_mask",
+            "move_and_slide()",
+        ),
+        sandbox_path: (
+            '"res://data/skills/bladebound_linebreaker.tres"',
+            'Input.is_action_just_pressed(&"skill_1")',
+            "linebreaker_skill.advance_tick(input_buffer)",
+            "normal_attack_combo.can_cancel_to(&\"action.skill_1\")",
+            "_current_normal_attack_hit",
+            'GameLog.info(&"LinebreakerSandbox", "CMB-009 linebreaker ready")',
+        ),
+        sandbox_scene_path: (
+            '[node name="DummyA" type="CharacterBody2D"',
+            '[node name="DummyB" type="CharacterBody2D"',
+            "collision_layer = 4",
+        ),
+        resource_path: (
+            'definition_id = &"skill.bladebound.linebreaker"',
+            "cooldown_seconds = 5.0",
+            "startup_ticks = 2",
+            "active_ticks = 8",
+            "recovery_ticks = 10",
+            "distance_pixels = 176.0",
+            "blocking_collision_mask = 1",
+            "pass_through_collision_mask = 4",
+            '&"action.attack"',
+            '&"action.dodge"',
+        ),
+    }
+    for path, markers in contracts.items():
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                errors.append(f"CMB-009 {path.name} missing marker: {marker}")
+
+    for attack_name in ("dev_a1.tres", "dev_a2.tres", "dev_a3.tres"):
+        attack_path = ROOT / "data/attacks" / attack_name
+        if attack_path.is_file() and '&"action.skill_1"' not in attack_path.read_text(
+            encoding="utf-8"
+        ):
+            errors.append(f"CMB-009 {attack_name} has no declared skill cancel window")
+
+    if model_path.is_file():
+        model_text = model_path.read_text(encoding="utf-8")
+        forbidden = re.search(
+            r"\b(Input|AnimationPlayer|AudioStreamPlayer|CanvasItem|Control|App|GameLog)\b|"
+            r"get_node\s*\(|extends\s+(Node|Area2D|Control)",
+            model_text,
+        )
+        if forbidden:
+            errors.append(
+                "CMB-009 linebreaker core depends on scene or presentation code: "
+                f"{forbidden.group(0)}"
+            )
+
+    if test_path.is_file():
+        test_text = test_path.read_text(encoding="utf-8")
+        for marker in (
+            "_test_linebreaker_resource_contract()",
+            "_test_linebreaker_movement_boundaries()",
+            "_test_linebreaker_progression()",
+            "_test_linebreaker_cancel_boundaries()",
+            "_test_normal_to_skill_cancel_rules()",
+            "_test_linebreaker_collision_sandbox()",
+            "_test_linebreaker_cancel_sandbox()",
+        ):
+            if marker not in test_text:
+                errors.append(f"CMB-009 tests missing marker: {marker}")
+
+
+def validate_hit_feedback_contract(errors: list[str]) -> None:
+    profile_path = ROOT / "scripts/data/hit_feedback_profile.gd"
+    request_path = ROOT / "scripts/combat/hit_feedback_request.gd"
+    service_path = ROOT / "scripts/combat/hit_feedback_service.gd"
+    presenter_path = ROOT / "scripts/presentation/hit_feedback_presenter.gd"
+    definition_path = ROOT / "scripts/data/attack_definition.gd"
+    sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
+    scene_path = ROOT / "scenes/tests/movement_sandbox.tscn"
+    test_path = ROOT / "tests/test_runner.gd"
+
+    contracts = {
+        profile_path: (
+            "class_name HitFeedbackProfile",
+            "extends BaseDefinition",
+            '&"light": Vector2i(2, 3)',
+            '&"medium": Vector2i(4, 5)',
+            '&"heavy": Vector2i(6, 8)',
+            '&"finisher": Vector2i(1, 10)',
+            "camera_zoom_pulse",
+            "camera_extension_ticks",
+            "vfx_style",
+            "sfx_layer_count",
+            "func resolve_hit_stop_ticks",
+        ),
+        request_path: (
+            "class_name HitFeedbackRequest",
+            "extends RefCounted",
+            "static func from_outcome",
+            "result.accepted",
+            "var world_position: Vector2",
+            "var final_damage: int",
+            "var hit_stop_ticks: int",
+            "var feedback_strength: StringName",
+            "func validation_errors",
+        ),
+        service_path: (
+            "class_name HitFeedbackService",
+            "signal hit_stop_requested",
+            "signal camera_feedback_requested",
+            "signal vfx_feedback_requested",
+            "signal sfx_feedback_requested",
+            "MAX_CAMERA_FEEDBACK_TICKS := 30",
+            "duplicate(true)",
+            "func request_feedback",
+            "_hit_stop_ticks_remaining = maxi(",
+            "_camera_shake_pixels = maxf(",
+            "tree.paused = true",
+            "func _release_tree_pause",
+            "tree.paused = false",
+        ),
+        presenter_path: (
+            "class_name HitFeedbackPresenter",
+            "extends Node2D",
+            "func bind_service",
+            "camera_state_changed.connect",
+            "vfx_feedback_requested.connect",
+            "sfx_feedback_requested.connect",
+            "draw_arc",
+            "func _unbind_service",
+        ),
+        definition_path: (
+            "const HIT_STOP_BUDGETS :=",
+            "hit_stop_ticks must stay inside the %s budget",
+        ),
+        sandbox_path: (
+            '"res://data/combat/feedback_profiles/light.tres"',
+            "hit_feedback_service.configure(profiles)",
+            "hit_feedback_presenter.bind_service(hit_feedback_service)",
+            "HitFeedbackRequestScript.from_outcome",
+            "hit_feedback_service.request_feedback(request)",
+            'GameLog.info(&"HitFeedbackSandbox", "CMB-010 feedback service ready")',
+        ),
+        scene_path: (
+            '[node name="CombatCamera" type="Camera2D"',
+            '[node name="HitFeedbackService" type="Node"',
+            '[node name="HitFeedbackPresenter" type="Node2D"',
+            '[node name="FeedbackStatusLabel" type="Label"',
+        ),
+    }
+    for path, markers in contracts.items():
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                errors.append(f"CMB-010 {path.name} missing marker: {marker}")
+
+    profile_contracts = {
+        "light.tres": (
+            'definition_id = &"feedback.hit.light"',
+            "minimum_hit_stop_ticks = 2",
+            "maximum_hit_stop_ticks = 3",
+            "sfx_layer_count = 1",
+        ),
+        "medium.tres": (
+            'definition_id = &"feedback.hit.medium"',
+            "minimum_hit_stop_ticks = 4",
+            "maximum_hit_stop_ticks = 5",
+            "sfx_layer_count = 2",
+        ),
+        "heavy.tres": (
+            'definition_id = &"feedback.hit.heavy"',
+            "minimum_hit_stop_ticks = 6",
+            "maximum_hit_stop_ticks = 8",
+            "sfx_layer_count = 3",
+        ),
+        "finisher.tres": (
+            'definition_id = &"feedback.hit.finisher"',
+            "minimum_hit_stop_ticks = 8",
+            "maximum_hit_stop_ticks = 10",
+            "camera_zoom_pulse = 0.03",
+            "sfx_layer_count = 3",
+        ),
+    }
+    for file_name, markers in profile_contracts.items():
+        path = ROOT / "data/combat/feedback_profiles" / file_name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                errors.append(f"CMB-010 {file_name} missing marker: {marker}")
+
+    if service_path.is_file():
+        service_text = service_path.read_text(encoding="utf-8")
+        forbidden = re.search(
+            r"\b(Camera2D|AudioStreamPlayer|GPUParticles2D|CPUParticles2D|"
+            r"HitFeedbackPresenter|Polygon2D|Control)\b|get_node\s*\(",
+            service_text,
+        )
+        if forbidden:
+            errors.append(
+                "CMB-010 feedback service depends on a concrete presenter: "
+                f"{forbidden.group(0)}"
+            )
+
+    if test_path.is_file():
+        test_text = test_path.read_text(encoding="utf-8")
+        for marker in (
+            "_test_hit_feedback_profiles()",
+            "_test_hit_feedback_request_snapshot()",
+            "_test_hit_feedback_channel_routing()",
+            "_test_hit_feedback_hit_stop_boundaries()",
+            "_test_hit_feedback_camera_merging()",
+            "_test_hit_feedback_determinism_and_lifecycle()",
+            "_test_hit_feedback_sandbox()",
+        ):
+            if marker not in test_text:
+                errors.append(f"CMB-010 tests missing marker: {marker}")
 
 
 def validate_hit_detection_contract(errors: list[str]) -> None:
@@ -925,7 +1377,7 @@ def validate_juggle_contract(errors: list[str]) -> None:
     combatant_path = ROOT / "scripts/combat/combatant_model.gd"
     result_path = ROOT / "scripts/combat/hit_result.gd"
     sandbox_path = ROOT / "scripts/actors/movement_sandbox.gd"
-    attack_path = ROOT / "data/attacks/dev_launcher.tres"
+    attack_path = ROOT / "data/attacks/dev_a3.tres"
     test_path = ROOT / "tests/test_runner.gd"
 
     if launch_profile_path.is_file():
@@ -1076,7 +1528,7 @@ def validate_juggle_contract(errors: list[str]) -> None:
     if attack_path.is_file():
         text = attack_path.read_text(encoding="utf-8")
         for marker in (
-            'definition_id = &"attack.dev.launcher_placeholder"',
+            'definition_id = &"attack.bladebound.a3_rising_slash"',
             'launch_profile = &"combat.launch.dev_launcher"',
             "max_hit_height = 160.0",
         ):
@@ -1087,7 +1539,7 @@ def validate_juggle_contract(errors: list[str]) -> None:
         text = sandbox_path.read_text(encoding="utf-8")
         for marker in (
             'GameLog.info(&"JuggleSandbox", "CMB-006 airborne control ready")',
-            'preload("res://data/attacks/dev_launcher.tres")',
+            'preload("res://data/attacks/dev_a3.tres")',
             "func _configure_launch_profiles() -> bool",
             "target.apply_damage(packet, result, launch_profile)",
             "combatant.hit_height_range(",
@@ -1128,12 +1580,12 @@ def validate_workflow(errors: list[str]) -> None:
         "cp licenses/GODOT-ENGINE-LICENSE.md",
         "cp docs/ASSET-LICENSE-REGISTER.csv",
         '--main-pack "$RUNNER_TEMP/ember-corridor-m0.pck"',
-        'grep -Fq "[DataRegistry] Loaded 8 definition(s)"',
+        'grep -Fq "[DataRegistry] Loaded 15 definition(s)"',
         "actions/upload-artifact@v4",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "actions/download-artifact@v4",
-        "PROJECT TEST SUMMARY: 64 passed, 0 failed",
+        "PROJECT TEST SUMMARY: 87 passed, 0 failed",
         "Run exported game natively",
         'grep -Fq "[MovementSandbox] MOV-001 sandbox ready"',
         'grep -Fq "[ElevationSandbox] MOV-002 sandbox ready"',
@@ -1144,6 +1596,10 @@ def validate_workflow(errors: list[str]) -> None:
         'grep -Fq "[DamageSandbox] CMB-004 formula ready"',
         'grep -Fq "[CombatantSandbox] CMB-005 combatant reactions ready"',
         'grep -Fq "[JuggleSandbox] CMB-006 airborne control ready"',
+        'grep -Fq "[InputBufferSandbox] CMB-007 input buffer ready"',
+        'grep -Fq "[NormalComboSandbox] CMB-008 three-hit combo ready"',
+        'grep -Fq "[LinebreakerSandbox] CMB-009 linebreaker ready"',
+        'grep -Fq "[HitFeedbackSandbox] CMB-010 feedback service ready"',
         'grep -Eq "^(SCRIPT )?ERROR:"',
     ):
         if marker not in text:
@@ -1155,32 +1611,46 @@ def validate_release_contract(errors: list[str]) -> None:
     installer_path = ROOT / "installer/windows/EmberCorridor.iss"
     version_path = ROOT / "release/VERSION"
     readme_path = ROOT / "README.md"
+    version_info_path = ROOT / "scripts/core/version_info.gd"
+    export_preset_path = ROOT / "export_presets.cfg"
     if not all(
         path.is_file()
-        for path in (workflow_path, installer_path, version_path, readme_path)
+        for path in (
+            workflow_path,
+            installer_path,
+            version_path,
+            readme_path,
+            version_info_path,
+            export_preset_path,
+        )
     ):
         return
 
     workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow_markers = (
-        "name: Publish Windows Preview Release",
+        "name: Publish Windows Visual Slice Release",
         "workflow_dispatch:",
+        "push:",
         "branches:",
         "- main",
+        '"release/VERSION"',
         "contents: write",
         "runs-on: windows-latest",
         "Godot_v4.7.1-stable_win64.exe",
         "Godot_v4.7.1-stable_win64_console.exe",
+        "Record visual acceptance boundary",
+        "Publishing as a prerelease",
+        "windowed visuals and input feel remain user-acceptance items",
         'Join-Path $env:RUNNER_TEMP "godot_console.exe"',
         "& $godotConsole --version",
         '$null -ne $versionExitCode -and $versionExitCode -ne 0',
         'versionOutput -match "^4\\.7\\.1\\.stable"',
         "& godot_console.exe --headless --path . --import --quit",
         "& godot_console.exe --headless --path . --script res://tests/test_runner.gd",
-        "windows_debug_x86_64.exe",
-        'PROJECT TEST SUMMARY: 64 passed, 0 failed',
-        "PASS: loaded and validated 8 definition(s)",
-        '--export-debug "Windows Desktop"',
+        "windows_release_x86_64.exe",
+        'PROJECT TEST SUMMARY: 88 passed, 0 failed',
+        "PASS: loaded and validated 15 definition(s)",
+        '--export-release "Windows Desktop"',
         "Exported game is not a Windows PE executable",
         "PE machine 0x{0:X4}",
         "choco install innosetup",
@@ -1188,15 +1658,19 @@ def validate_release_contract(errors: list[str]) -> None:
         '"/VERYSILENT"',
         "Installer did not place EmberCorridor.exe",
         "Installed game does not match the tested exported executable",
-        r"\[DataRegistry\] Loaded 8 definition\(s\)",
+        r"\[DataRegistry\] Loaded 15 definition\(s\)",
         r"\[JuggleSandbox\] CMB-006 airborne control ready",
+        r"\[InputBufferSandbox\] CMB-007 input buffer ready",
+        r"\[NormalComboSandbox\] CMB-008 three-hit combo ready",
+        r"\[LinebreakerSandbox\] CMB-009 linebreaker ready",
+        r"\[HitFeedbackSandbox\] CMB-010 feedback service ready",
         "SHA256SUMS.txt",
         "actions/upload-artifact@v4",
         "GH_TOKEN: ${{ github.token }}",
         "gh release create",
         "--prerelease",
-        "EmberCorridor-M1-Preview-Setup-x64.exe",
-        "EmberCorridor-M1-Preview-Portable-x64.zip",
+        "EmberCorridor-0.1.2-Visual-Slice-Setup-x64.exe",
+        "EmberCorridor-0.1.2-Visual-Slice-Windows-x64.zip",
     )
     for marker in workflow_markers:
         if marker not in workflow_text:
@@ -1204,6 +1678,8 @@ def validate_release_contract(errors: list[str]) -> None:
 
     if re.search(r"(?m)^\s*pull_request\s*:", workflow_text):
         errors.append("Windows release workflow must not publish from pull requests")
+    if not re.search(r"(?m)^\s*push\s*:", workflow_text):
+        errors.append("Windows release workflow must publish from a push to main")
 
     installer_text = installer_path.read_text(encoding="utf-8")
     installer_markers = (
@@ -1212,7 +1688,7 @@ def validate_release_contract(errors: list[str]) -> None:
         "ArchitecturesAllowed=x64",
         "ArchitecturesInstallIn64BitMode=x64",
         'Source: "..\\..\\build\\windows\\EmberCorridor.exe"',
-        "OutputBaseFilename=EmberCorridor-M1-Preview-Setup-x64",
+        "OutputBaseFilename=EmberCorridor-0.1.2-Visual-Slice-Setup-x64",
         'Name: "{autoprograms}\\Ember Corridor"',
         'Name: "{autodesktop}\\Ember Corridor"',
     )
@@ -1221,24 +1697,40 @@ def validate_release_contract(errors: list[str]) -> None:
             errors.append(f"Windows installer definition missing marker: {marker}")
 
     version = version_path.read_text(encoding="utf-8").strip()
-    if version != "0.1.0-m1-preview":
+    if version != "0.1.2-visual-slice":
         errors.append(
-            "release/VERSION must be 0.1.0-m1-preview for the M1 preview release"
+            "release/VERSION must be 0.1.2-visual-slice for the visual slice"
         )
 
-    readme_text = readme_path.read_text(encoding="utf-8")
-    release_url = (
-        "https://github.com/Enma-Aix/ember-corridor/releases/download/"
-        "v0.1.0-m1-preview/"
-    )
-    for asset_name in (
-        "EmberCorridor-M1-Preview-Setup-x64.exe",
-        "EmberCorridor-M1-Preview-Portable-x64.zip",
-        "SHA256SUMS.txt",
+    version_info_text = version_info_path.read_text(encoding="utf-8")
+    if f'const GAME_VERSION := "{version}"' not in version_info_text:
+        errors.append("VersionInfo.GAME_VERSION must match release/VERSION")
+    if 'const BUILD_CHANNEL := "legacy visual slice"' not in version_info_text:
+        errors.append("VersionInfo.BUILD_CHANNEL must identify the legacy visual slice")
+
+    export_preset_text = export_preset_path.read_text(encoding="utf-8")
+    for marker in (
+        'application/file_version="0.1.2.0"',
+        'application/product_version="0.1.2.0"',
+        'application/file_description="Ember Corridor legacy-direction playable visual slice"',
     ):
-        marker = f"{release_url}{asset_name}"
+        if marker not in export_preset_text:
+            errors.append(f"Windows export metadata missing marker: {marker}")
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+    for marker in (
+        "v0.1.0-m1-preview",
+        "已标记为不合格的历史灰盒",
+        "不建议作为玩家版本下载",
+        "真实窗口截图",
+        "人工验收",
+        "v0.1.2-visual-slice",
+        "v0.1.1-m1-tech-preview",
+        "已撤回",
+        "旧方向",
+    ):
         if marker not in readme_text:
-            errors.append(f"README missing permanent Release asset URL: {asset_name}")
+            errors.append(f"README missing deprecated preview warning: {marker}")
 
 
 def validate_export_boundary(errors: list[str]) -> None:
@@ -1252,13 +1744,19 @@ def validate_export_boundary(errors: list[str]) -> None:
         return
     filters = {value.strip() for value in match.group(1).split(",")}
     required_filters = {
+        "addons/*",
         "build/*",
+        "design/*",
         "docs/*",
+        "export_templates/*",
+        "feature_profiles/*",
         "installer/*",
         "licenses/*",
         "release/*",
+        "script_templates/*",
         "scripts/tools/*",
         "tests/*",
+        "text_editor_themes/*",
         "tools/*",
     }
     missing = sorted(required_filters.difference(filters))

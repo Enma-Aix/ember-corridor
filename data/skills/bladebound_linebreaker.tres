@@ -1,0 +1,68 @@
+[gd_resource type="Resource" script_class="SkillDefinition" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/skill_definition.gd" id="1_skill"]
+[ext_resource type="Script" path="res://scripts/data/skill_movement_profile.gd" id="2_movement"]
+[ext_resource type="Script" path="res://scripts/data/attack_definition.gd" id="3_attack"]
+[ext_resource type="Script" path="res://scripts/data/attack_cancel_window.gd" id="4_cancel"]
+
+[sub_resource type="Resource" id="AttackCancelWindow_attack"]
+script = ExtResource("4_cancel")
+start_tick = 10
+end_tick = 20
+target_tags = Array[StringName]([&"action.attack"])
+
+[sub_resource type="Resource" id="AttackCancelWindow_dodge"]
+script = ExtResource("4_cancel")
+start_tick = 12
+end_tick = 20
+target_tags = Array[StringName]([&"action.dodge"])
+
+[sub_resource type="Resource" id="AttackDefinition_linebreaker"]
+script = ExtResource("3_attack")
+definition_id = &"attack.bladebound.linebreaker"
+display_name_key = &"attack.bladebound.linebreaker.name"
+tags = Array[StringName]([&"skill_attack", &"movement_attack", &"linebreaker"])
+startup_ticks = 2
+active_ticks = 8
+recovery_ticks = 10
+cancel_windows = Array[ExtResource("4_cancel")]([SubResource("AttackCancelWindow_attack"), SubResource("AttackCancelWindow_dodge")])
+hit_stop_ticks = 4
+feedback_strength = "medium"
+damage_coefficient = 1.35
+flat_damage = 16.0
+poise_damage = 10.0
+hit_tags = Array[StringName]([&"damage.physical", &"attack.skill", &"movement.linebreaker"])
+launch_profile = &"none"
+hitbox_size = Vector2(120, 60)
+hitbox_offset = Vector2(60, -30)
+min_hit_height = 0.0
+max_hit_height = 64.0
+rehit_interval_ticks = 0
+
+[sub_resource type="Resource" id="SkillMovementProfile_linebreaker"]
+script = ExtResource("2_movement")
+travel_start_tick = 1
+travel_end_tick = 10
+distance_pixels = 176.0
+direction_mode = "facing_horizontal"
+blocking_collision_mask = 1
+pass_through_collision_mask = 4
+pass_through_target_tags = Array[StringName]([&"enemy.size.small"])
+
+[resource]
+script = ExtResource("1_skill")
+definition_id = &"skill.bladebound.linebreaker"
+display_name_key = &"skill.bladebound.linebreaker.name"
+tags = Array[StringName]([&"skill", &"bladebound", &"movement_skill"])
+description_key = &"skill.bladebound.linebreaker.description"
+icon_path = ""
+animation_name = &"skill_linebreaker"
+vfx_scene_path = ""
+sfx_event = &"sfx.skill.linebreaker"
+cooldown_seconds = 5.0
+attack_sequence = Array[ExtResource("3_attack")]([SubResource("AttackDefinition_linebreaker")])
+movement_profile = SubResource("SkillMovementProfile_linebreaker")
+cancel_rules = Array[ExtResource("4_cancel")]([SubResource("AttackCancelWindow_attack"), SubResource("AttackCancelWindow_dodge")])
+ai_value_tags = Array[StringName]([&"ai.approach", &"ai.damage"])
+unlock_level = 1
+upgrade_nodes = Array[StringName]([&"skill.bladebound.linebreaker.upgrade.distance", &"skill.bladebound.linebreaker.upgrade.charges"])

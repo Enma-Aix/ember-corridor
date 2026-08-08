@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="AttackDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/attack_definition.gd" id="1_attack"]
+[ext_resource type="Script" path="res://scripts/data/attack_cancel_window.gd" id="2_cancel"]
+
+[sub_resource type="Resource" id="AttackCancelWindow_chain"]
+script = ExtResource("2_cancel")
+start_tick = 10
+end_tick = 23
+target_tags = Array[StringName]([&"action.attack"])
+
+[sub_resource type="Resource" id="AttackCancelWindow_dodge"]
+script = ExtResource("2_cancel")
+start_tick = 17
+end_tick = 23
+target_tags = Array[StringName]([&"action.dodge"])
+
+[sub_resource type="Resource" id="AttackCancelWindow_skill_1"]
+script = ExtResource("2_cancel")
+start_tick = 10
+end_tick = 21
+target_tags = Array[StringName]([&"action.skill_1"])
+
+[resource]
+script = ExtResource("1_attack")
+definition_id = &"attack.bladebound.a2_return_slash"
+display_name_key = &"attack.bladebound.a2_return_slash.name"
+tags = Array[StringName]([&"normal_attack", &"combo_a2"])
+startup_ticks = 7
+active_ticks = 3
+recovery_ticks = 13
+cancel_windows = Array[ExtResource("2_cancel")]([SubResource("AttackCancelWindow_chain"), SubResource("AttackCancelWindow_dodge"), SubResource("AttackCancelWindow_skill_1")])
+hit_stop_ticks = 3
+feedback_strength = "light"
+damage_coefficient = 1.1
+flat_damage = 12.0
+poise_damage = 5.0
+hit_tags = Array[StringName]([&"damage.physical", &"attack.normal"])
+launch_profile = &"none"
+hitbox_size = Vector2(96, 60)
+hitbox_offset = Vector2(52, -30)
+min_hit_height = 0.0
+max_hit_height = 64.0
+rehit_interval_ticks = 0

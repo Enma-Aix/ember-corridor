@@ -1,4 +1,4 @@
-name: Publish Windows Preview Release
+name: Publish Windows Visual Slice Release
 
 on:
   workflow_dispatch:
@@ -24,12 +24,17 @@ jobs:
     timeout-minutes: 45
     env:
       GODOT_VERSION: "4.7.1"
-      PORTABLE_ASSET: EmberCorridor-M1-Preview-Portable-x64.zip
-      INSTALLER_ASSET: EmberCorridor-M1-Preview-Setup-x64.exe
+      PORTABLE_ASSET: EmberCorridor-0.1.2-Visual-Slice-Windows-x64.zip
+      INSTALLER_ASSET: EmberCorridor-0.1.2-Visual-Slice-Setup-x64.exe
 
     steps:
       - name: Check out main source
         uses: actions/checkout@v4
+
+      - name: Record visual acceptance boundary
+        shell: pwsh
+        run: |
+          Write-Host "Publishing as a prerelease. Native Windows build, install, and headless startup are verified below; windowed visuals and input feel remain user-acceptance items."
 
       - name: Validate repository contract
         run: python tools/validate_project.py
@@ -93,7 +98,7 @@ jobs:
             -Destination $templateDirectory `
             -Recurse `
             -Force
-          if (-not (Test-Path (Join-Path $templateDirectory "windows_debug_x86_64.exe"))) {
+          if (-not (Test-Path (Join-Path $templateDirectory "windows_release_x86_64.exe"))) {
             throw "Windows x86-64 export template was not installed"
           }
 
@@ -113,13 +118,13 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/release/data-validation.txt `
-            -Pattern "PASS: loaded and validated 8 definition(s)" `
+            -Pattern "PASS: loaded and validated 15 definition(s)" `
             -SimpleMatch `
             -Quiet)) {
-            throw "Expected 8 validated definitions were not reported"
+            throw "Expected 15 validated definitions were not reported"
           }
 
-      - name: Run 64 game tests natively on Windows
+      - name: Run 88 game tests natively on Windows
         shell: pwsh
         run: |
           & godot_console.exe --headless --path . --script res://tests/test_runner.gd 2>&1 `
@@ -129,9 +134,9 @@ jobs:
           }
           if (-not (Select-String `
             -Path build/test-results/release/game-tests.txt `
-            -Pattern "PROJECT TEST SUMMARY: 64 passed, 0 failed" `
+            -Pattern "PROJECT TEST SUMMARY: 88 passed, 0 failed" `
             -Quiet)) {
-            throw "Expected 64-test success summary was not found"
+            throw "Expected 88-test success summary was not found"
           }
           if (Select-String `
             -Path build/test-results/release/game-tests.txt `
@@ -149,7 +154,7 @@ jobs:
           & godot_console.exe `
             --headless `
             --path . `
-            --export-debug "Windows Desktop" `
+            --export-release "Windows Desktop" `
             build/windows/EmberCorridor.exe 2>&1 `
             | Tee-Object -FilePath build/test-results/release/export.txt
           if ($LASTEXITCODE -ne 0) {
@@ -170,7 +175,10 @@ jobs:
             throw ("Exported game is not x86-64: PE machine 0x{0:X4}" -f $machine)
           }
           Copy-Item licenses/GODOT-ENGINE-LICENSE.md build/windows/GODOT-ENGINE-LICENSE.md
+          Copy-Item licenses/fonts/NOTO-SANS-SC-OFL.txt build/windows/NOTO-SANS-SC-OFL.txt
           Copy-Item docs/ASSET-LICENSE-REGISTER.csv build/windows/ASSET-LICENSE-REGISTER.csv
+          Copy-Item release/START-HERE.txt build/windows/START-HERE.txt
+          Copy-Item release/RELEASE_NOTES.md build/windows/RELEASE_NOTES.md
           Compress-Archive `
             -Path build/windows/* `
             -DestinationPath (Join-Path build/release $env:PORTABLE_ASSET) `
@@ -201,6 +209,21 @@ jobs:
           if ($combinedLog -notmatch "\[JuggleSandbox\] CMB-006 airborne control ready") {
             throw "Exported game did not reach the playable CMB-006 scene"
           }
+          if ($combinedLog -notmatch "\[InputBufferSandbox\] CMB-007 input buffer ready") {
+            throw "Exported game did not initialize the CMB-007 input buffer"
+          }
+          if ($combinedLog -notmatch "\[NormalComboSandbox\] CMB-008 three-hit combo ready") {
+            throw "Exported game did not initialize the CMB-008 normal combo"
+          }
+          if ($combinedLog -notmatch "\[LinebreakerSandbox\] CMB-009 linebreaker ready") {
+            throw "Exported game did not initialize the CMB-009 linebreaker"
+          }
+          if ($combinedLog -notmatch "\[HitFeedbackSandbox\] CMB-010 feedback service ready") {
+            throw "Exported game did not initialize the CMB-010 feedback service"
+          }
+          if ($combinedLog -notmatch "\[VisualSlice\] playable presentation ready") {
+            throw "Exported game did not initialize the visual-slice presentation"
+          }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Exported game logged a Godot runtime error"
           }
@@ -212,7 +235,6 @@ jobs:
           choco install innosetup --yes --no-progress
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup installation failed with code $LASTEXITCODE"
-          }
           $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
           if ($null -eq $compiler) {
             $fallback = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
@@ -281,11 +303,26 @@ jobs:
             throw "Installed game exited with code $($game.ExitCode)"
           }
           $combinedLog = (Get-Content $stdout -Raw) + "`n" + (Get-Content $stderr -Raw)
-          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 8 definition\(s\)") {
+          if ($combinedLog -notmatch "\[DataRegistry\] Loaded 15 definition\(s\)") {
             throw "Installed game did not load its packaged Resource definitions"
           }
           if ($combinedLog -notmatch "\[JuggleSandbox\] CMB-006 airborne control ready") {
             throw "Installed game did not reach the playable CMB-006 scene"
+          }
+          if ($combinedLog -notmatch "\[InputBufferSandbox\] CMB-007 input buffer ready") {
+            throw "Installed game did not initialize the CMB-007 input buffer"
+          }
+          if ($combinedLog -notmatch "\[NormalComboSandbox\] CMB-008 three-hit combo ready") {
+            throw "Installed game did not initialize the CMB-008 normal combo"
+          }
+          if ($combinedLog -notmatch "\[LinebreakerSandbox\] CMB-009 linebreaker ready") {
+            throw "Installed game did not initialize the CMB-009 linebreaker"
+          }
+          if ($combinedLog -notmatch "\[HitFeedbackSandbox\] CMB-010 feedback service ready") {
+            throw "Installed game did not initialize the CMB-010 feedback service"
+          }
+          if ($combinedLog -notmatch "\[VisualSlice\] playable presentation ready") {
+            throw "Installed game did not initialize the visual-slice presentation"
           }
           if ($combinedLog -match "(?m)^(SCRIPT )?ERROR:") {
             throw "Installed game logged a Godot runtime error"
@@ -306,14 +343,15 @@ jobs:
             -Encoding ascii
           $version = (Get-Content release/VERSION -Raw).Trim()
           @"
-          # Ember Corridor M1 Playable Preview $version
+          # Ember Corridor Visual Slice $version
 
-          This is the first stable playable Windows checkpoint from main.
+          This is a legacy-direction playable visual slice, not the future product direction.
 
           - Setup: install per-user, create Start Menu and desktop shortcuts, then launch.
           - Portable: extract the ZIP and run EmberCorridor.exe.
           - Controls: WASD move, J attack, K jump, L dodge, Esc pause.
-          - Validation: 64 tests plus native export, installer, and installed-game launch checks.
+          - Validation: 88 tests plus native release export, installer, and installed-game launch checks.
+          - Scope: one playable room with runtime art, simple enemy AI, HUD, and an end state; no multi-room level, save loop, progression, or final audio.
 
           This preview is unsigned, so Windows may display an unknown-publisher warning.
           "@ | Set-Content -Path build/release/RELEASE_NOTES.md -Encoding utf8
@@ -323,8 +361,8 @@ jobs:
         with:
           name: ember-corridor-release-candidate
           path: |
-            build/release/EmberCorridor-M1-Preview-Setup-x64.exe
-            build/release/EmberCorridor-M1-Preview-Portable-x64.zip
+            build/release/EmberCorridor-0.1.2-Visual-Slice-Setup-x64.exe
+            build/release/EmberCorridor-0.1.2-Visual-Slice-Windows-x64.zip
             build/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -358,7 +396,7 @@ jobs:
             }
             & gh release edit `
               $tag `
-              --title "Ember Corridor M1 Playable Preview $version" `
+              --title "Ember Corridor Visual Slice $version" `
               --notes-file $notes `
               --prerelease `
               --repo $env:GITHUB_REPOSITORY
@@ -369,7 +407,7 @@ jobs:
               $portable `
               $checksums `
               --target $env:GITHUB_SHA `
-              --title "Ember Corridor M1 Playable Preview $version" `
+              --title "Ember Corridor Visual Slice $version" `
               --notes-file $notes `
               --prerelease `
               --repo $env:GITHUB_REPOSITORY

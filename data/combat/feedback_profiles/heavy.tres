@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="HitFeedbackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/hit_feedback_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+definition_id = &"feedback.hit.heavy"
+display_name_key = &"feedback.hit.heavy.name"
+tags = Array[StringName]([&"feedback", &"hit", &"heavy"])
+strength = "heavy"
+minimum_hit_stop_ticks = 6
+maximum_hit_stop_ticks = 8
+camera_shake_pixels = 4.0
+camera_duration_ticks = 8
+camera_extension_ticks = 2
+camera_zoom_pulse = 0.02
+vfx_style = &"vfx.hit.heavy"
+vfx_scale = 1.35
+vfx_lifetime_ticks = 14
+sfx_cue = &"sfx.hit.heavy"
+sfx_layer_count = 3
